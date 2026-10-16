@@ -1,0 +1,9 @@
+services:
+  demo:
+    image: nginx:latest
+    privileged: true
+    network_mode: host
+    ports:
+      - "0.0.0.0:8080:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
