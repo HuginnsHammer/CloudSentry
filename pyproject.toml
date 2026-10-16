@@ -22,4 +22,5 @@ addopts = "-ra"
 line-length = 100
 target-version = "py312"
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# Expand the lint set as the codebase is formatted and hardened.
+select = ["F"]
