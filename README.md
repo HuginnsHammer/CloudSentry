@@ -9,8 +9,8 @@ CloudSentry is a lightweight, local-first static configuration auditor for Terra
 ## Features
 - CLI with terminal and JSON reports.
 - Terraform HCL, Dockerfile, and Docker Compose YAML checks.
-- Stable rule IDs, severity, evidence, impact, remediation, fingerprints, and source locations.
-- FastAPI endpoint for local scanning.
+- Stable rule IDs, severity, confidence, evidence, impact, remediation, fingerprints, source locations, and reasoned suppressions.
+- FastAPI endpoint and React + TypeScript dashboard for local scanning.
 - No applying Terraform, building images, starting containers, or executing scanned files.
 
 ## Quick start
@@ -23,13 +23,12 @@ Requires Python 3.12+.
     cloudsentry scan examples --format json --output report.json
     pytest
 
-On fish, use the environment's fish activation script if available.
-
-## API
+## Run API and dashboard
 
     uvicorn scanner.api.app:app --host 127.0.0.1 --port 8000
+    cd frontend && npm install && npm run dev
 
-Open http://127.0.0.1:8000/docs. Keep the API bound to loopback: its current endpoint accepts local filesystem paths and is not safe to expose to untrusted clients.
+Open http://127.0.0.1:5173. Keep the API bound to loopback: its endpoint accepts local filesystem paths and is not safe to expose to untrusted clients.
 
 ## Exit codes
 0 = no findings at or above the selected severity threshold; 1 = qualifying findings; 2 = input/parser/usage error. A clean scan is not proof that a configuration is secure.
@@ -38,9 +37,8 @@ Open http://127.0.0.1:8000/docs. Keep the API bound to loopback: its current end
 
     pytest
     ruff check .
-    ruff format --check .
 
-Read docs/architecture.md, docs/detection-rules.md, docs/threat-model.md, docs/limitations.md, docs/development.md, and docs/api.md.
+The initial Ruff gate checks for undefined names. Formatting and broader style rules are follow-up hardening work; see the development notes.
 
 ## Responsible use
 Scan configurations you own or are authorized to assess. Verify findings against deployment context and current provider guidance. See SECURITY.md for reporting.

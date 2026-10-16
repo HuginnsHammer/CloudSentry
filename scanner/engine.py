@@ -1,29 +1,40 @@
+"""File discovery, safe parsing, rule dispatch, and result normalization."""
 import json
 from pathlib import Path
 from typing import Iterable
+
 import hcl2
 import yaml
+
 from scanner.models import ScanError, ScanResult
 from scanner.rules.compose import scan_compose
 from scanner.rules.dockerfile import scan_dockerfile
 from scanner.rules.terraform import scan_terraform
 from scanner.scoring import summarize
+from scanner.suppression import apply_suppressions
+
 MAX_FILE_BYTES = 2 * 1024 * 1024
 
 def detect_kind(path: Path) -> str | None:
-    if path.name.lower() == "dockerfile" or path.name.lower().startswith("dockerfile."): return "dockerfile"
-    if path.suffix.lower() == ".tf": return "terraform"
-    if path.suffix.lower() in {".yaml", ".yml"}: return "yaml"
+    if path.name.lower() == "dockerfile" or path.name.lower().startswith("dockerfile."):
+        return "dockerfile"
+    if path.suffix.lower() == ".tf":
+        return "terraform"
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        return "yaml"
     return None
 
 def discover(paths: Iterable[Path]) -> list[Path]:
     found: set[Path] = set()
     for item in paths:
         if item.is_file():
-            if detect_kind(item): found.add(item)
+            if detect_kind(item):
+                found.add(item)
         elif item.is_dir():
             for candidate in item.rglob("*"):
-                if candidate.is_file() and detect_kind(candidate) and not any(part in {".git", ".venv", "node_modules"} for part in candidate.parts): found.add(candidate)
+                excluded = {".git", ".venv", "node_modules"}
+                if candidate.is_file() and detect_kind(candidate) and not any(p in excluded for p in candidate.parts):
+                    found.add(candidate)
     return sorted(found)
 
 def scan_paths(paths: Iterable[Path]) -> ScanResult:
@@ -32,26 +43,39 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
         display = str(path)
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
-                result.errors.append(ScanError(file_path=display, kind="input", message=f"File exceeds {MAX_FILE_BYTES} byte limit")); continue
-            text = path.read_text(encoding="utf-8")
+                result.errors.append(ScanError(file_path=display, kind="input", message=f"File exceeds {MAX_FILE_BYTES} byte limit"))
+                continue
+            source = path.read_text(encoding="utf-8")
             kind = detect_kind(path)
-            if kind == "dockerfile": result.findings.extend(scan_dockerfile(text, display))
+            current = []
+            if kind == "dockerfile":
+                current = scan_dockerfile(source, display)
             elif kind == "terraform":
-                try: parsed = hcl2.loads(text)
+                try:
+                    parsed = hcl2.loads(source)
                 except Exception as exc:
-                    result.errors.append(ScanError(file_path=display, kind="parse", message=f"Terraform parse failed: {exc}")); continue
-                result.findings.extend(scan_terraform(text, display, parsed))
+                    result.errors.append(ScanError(file_path=display, kind="parse", message=f"Terraform parse failed: {exc}"))
+                    continue
+                current = scan_terraform(source, display, parsed)
             elif kind == "yaml":
-                try: data = yaml.safe_load(text)
+                try:
+                    data = yaml.safe_load(source)
                 except yaml.YAMLError as exc:
-                    result.errors.append(ScanError(file_path=display, kind="parse", message=f"YAML parse failed: {exc}")); continue
-                if isinstance(data, dict) and "services" in data: result.findings.extend(scan_compose(data, display, text))
+                    result.errors.append(ScanError(file_path=display, kind="parse", message=f"YAML parse failed: {exc}"))
+                    continue
+                if isinstance(data, dict) and "services" in data:
+                    current = scan_compose(data, display, source)
+            result.findings.extend(apply_suppressions(current, source))
             result.files_scanned += 1
         except (OSError, UnicodeError) as exc:
             result.errors.append(ScanError(file_path=display, kind="input", message=str(exc)))
-    result.findings = sorted({f.fingerprint: f for f in result.findings}.values(), key=lambda f: (f.file_path, f.line_start or 0, f.rule_id))
+    result.findings = sorted(
+        {finding.fingerprint: finding for finding in result.findings}.values(),
+        key=lambda finding: (finding.file_path, finding.line_start or 0, finding.rule_id),
+    )
     result.risk_score, result.severity_counts = summarize(result.findings)
-    if result.errors: result.status = "partial" if result.files_scanned else "error"
+    if result.errors:
+        result.status = "partial" if result.files_scanned else "error"
     return result
 
 def result_json(result: ScanResult) -> str:
