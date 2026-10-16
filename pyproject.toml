@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[project]
+name = "cloudsentry"
+version = "0.1.0"
+description = "Local-first static security auditor for Terraform, Dockerfiles and Compose"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = ["fastapi>=0.115,<1", "pydantic>=2.9,<3", "PyYAML>=6,<7", "python-hcl2>=7,<8", "typer>=0.12,<1", "rich>=13.9,<15", "uvicorn[standard]>=0.30,<1"]
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9", "httpx>=0.27,<1", "ruff>=0.7,<1"]
+[project.scripts]
+cloudsentry = "scanner.cli:app"
+[tool.hatch.build.targets.wheel]
+packages = ["scanner"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
