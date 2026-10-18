@@ -65,7 +65,9 @@ def test_inline_security_group_ingress_world_open_is_detected():
   }
 }
 '''
-    findings = scan_terraform(source, "main.tf", hcl2.loads(source))
+    parsed = hcl2.loads(source)
+    print("PARSED TERRAFORM:", repr(parsed))
+    findings = scan_terraform(source, "main.tf", parsed)
     matches = [finding for finding in findings if finding.rule_id == "CS-TF-002"]
     assert len(matches) == 1
     assert matches[0].resource == "aws_security_group.test"
