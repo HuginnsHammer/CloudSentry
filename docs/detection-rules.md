@@ -10,7 +10,7 @@
 | CS-CMP-003 | Critical | Docker daemon socket mounted | Exact path match. |
 | CS-CMP-004 | Medium | Wildcard host port binding | Firewall determines reachability. |
 | CS-TF-001 | Critical | Public S3 ACL | Effective bucket policy can alter exposure. |
-| CS-TF-002 | High | Security group rule includes 0.0.0.0/0 | Direction/protocol require review. |
+| CS-TF-002 | High | World-open AWS security group ingress (IPv4/IPv6) | Literal CIDRs only; actual reachability depends on ports, routing, and other network controls. |
 | CS-TF-003 | High | EBS encryption explicitly false | Defaults and other controls are not inferred. |
 
 Add positive and negative tests whenever changing a rule.
