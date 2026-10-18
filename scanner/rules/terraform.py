@@ -42,7 +42,7 @@ def _append_open_ingress_finding(
     cidr = cidrs[0]
     port_context = ", ".join(
         f"{key}={attrs[key]!r}"
-        for key in ("protocol", "from_port", "to_port", "ip_protocol", "from_port", "to_port")
+        for key in ("protocol", "ip_protocol", "from_port", "to_port")
         if key in attrs
     )
     evidence_parts = [f"{context} allows source {', '.join(cidrs)}"]
@@ -72,6 +72,10 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
         if not isinstance(block, dict):
             continue
         for resource_type, instances in block.items():
+            # python-hcl2 7.x returns labeled blocks as {label: body}; retain
+            # compatibility with the older list-of-singleton-dicts shape too.
+            if isinstance(instances, dict):
+                instances = [{label: body} for label, body in instances.items()]
             if not isinstance(instances, list):
                 continue
             for instance in instances:
