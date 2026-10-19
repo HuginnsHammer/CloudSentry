@@ -1,36 +1,118 @@
 from pathlib import Path
 from typing import Annotated
+
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
+
 from scanner.engine import result_json, scan_paths
 from scanner.models import Severity
-app = typer.Typer(no_args_is_help=True, help="Local static security auditing for IaC and container configuration.")
+from scanner.scoring import summarize
+
+app = typer.Typer(
+    no_args_is_help=True,
+    help="Local static security auditing for IaC and container configuration.",
+)
 console = Console()
 
+EXIT_CLEAN = 0
+EXIT_FINDINGS = 1
+EXIT_ERROR = 2
+
+
 @app.command()
-def scan(paths: Annotated[list[Path], typer.Argument(exists=True, readable=True)], format: Annotated[str, typer.Option("--format", help="text or json")] = "text", output: Annotated[Path | None, typer.Option("--output", "-o")] = None, severity: Annotated[str, typer.Option("--severity")] = "info") -> None:
-    if format not in {"text", "json"}: raise typer.BadParameter("format must be text or json")
-    try: threshold = list(Severity).index(Severity(severity.lower()))
-    except ValueError as exc: raise typer.BadParameter("unknown severity") from exc
+def scan(
+    paths: Annotated[list[Path], typer.Argument(exists=True, readable=True)],
+    output_format: Annotated[str, typer.Option("--format", help="text or json")] = "text",
+    output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
+    severity: Annotated[str, typer.Option("--severity")] = "info",
+) -> None:
+    """Scan files or directories.
+
+    Exit status: 0 = no findings at or above --severity; 1 = qualifying findings;
+    2 = at least one file could not be scanned (parse error, unreadable or oversized input)
+    or the command was misused. 2 takes precedence over 1 so a CI gate cannot pass while
+    part of the target went unscanned.
+    """
+    if output_format not in {"text", "json"}:
+        raise typer.BadParameter("format must be text or json")
+    try:
+        threshold = list(Severity).index(Severity(severity.lower()))
+    except ValueError as exc:
+        raise typer.BadParameter("unknown severity") from exc
+
     result = scan_paths(paths)
-    visible = [f for f in result.findings if list(Severity).index(f.severity) <= threshold and not f.suppressed]
-    result.findings = visible
-    from scanner.scoring import summarize
-    result.risk_score, result.severity_counts = summarize(visible)
-    if format == "json": rendered = result_json(result)
+    # The report keeps suppressed findings (flagged, with their reason) as an audit trail;
+    # only active findings drive the table, the risk score, and the exit status.
+    reported = [
+        finding
+        for finding in result.findings
+        if list(Severity).index(finding.severity) <= threshold
+    ]
+    visible = [finding for finding in reported if not finding.suppressed]
+    suppressed_count = len(reported) - len(visible)
+    result.findings = reported
+    result.risk_score, result.severity_counts = summarize(reported)
+
+    if output_format == "json":
+        rendered = result_json(result)
     else:
         table = Table(title=f"CloudSentry — {result.files_scanned} file(s) scanned")
-        for col in ("Severity", "Rule", "Location", "Finding"): table.add_column(col)
-        for f in visible: table.add_row(f.severity.value.upper(), f.rule_id, f"{f.file_path}:{f.line_start or '?'}", f.title)
+        for column in ("Severity", "Rule", "Location", "Finding"):
+            table.add_column(column)
+        for finding in visible:
+            table.add_row(
+                finding.severity.value.upper(),
+                finding.rule_id,
+                f"{finding.file_path}:{finding.line_start or '?'}",
+                finding.title,
+            )
         with console.capture() as capture:
-            console.print(table); console.print(f"Risk score: {result.risk_score}/100 (heuristic, not probability)")
-            for error in result.errors: console.print(f"[red]{error.kind}: {error.file_path}: {error.message}[/red]")
+            console.print(table)
+            console.print(f"Risk score: {result.risk_score}/100 (heuristic, not probability)")
+            if suppressed_count:
+                console.print(
+                    f"{suppressed_count} suppressed finding(s) not shown; "
+                    "--format json lists them with their reasons."
+                )
+            for warning in result.warnings:
+                location = f"{warning.file_path}:{warning.line_start or '?'}"
+                console.print(
+                    f"[yellow]warning: {escape(location)}: {escape(warning.message)}[/yellow]"
+                )
+            for error in result.errors:
+                text = f"{error.kind}: {error.file_path}: {error.message}"
+                console.print(f"[red]{escape(text)}[/red]")
         rendered = capture.get()
-    if output: output.write_text(rendered, encoding="utf-8")
-    else: typer.echo(rendered, nl=False)
-    raise typer.Exit(code=2 if result.status == "error" else 1 if visible else 0)
+
+    if output:
+        output.write_text(rendered, encoding="utf-8")
+    else:
+        typer.echo(rendered, nl=False)
+
+    if result.errors:
+        typer.echo(
+            f"cloudsentry: {len(result.errors)} file(s) could not be scanned; "
+            "exiting with status 2.",
+            err=True,
+        )
+        raise typer.Exit(code=EXIT_ERROR)
+    raise typer.Exit(code=EXIT_FINDINGS if visible else EXIT_CLEAN)
+
 
 @app.command()
 def rules() -> None:
-    for rule, description in [("CS-DKR-001", "Dockerfile explicitly runs as root"), ("CS-DKR-002", "Mutable latest base image tag"), ("CS-DKR-003", "No USER instruction"), ("CS-CMP-001", "Privileged Compose service"), ("CS-CMP-002", "Host network mode"), ("CS-CMP-003", "Docker socket mount"), ("CS-CMP-004", "Wildcard host port binding"), ("CS-TF-001", "Public S3 ACL"), ("CS-TF-002", "World-open IPv4 CIDR"), ("CS-TF-003", "EBS encryption explicitly disabled")]: console.print(f"{rule:14} {description}")
+    for rule, description in [
+        ("CS-DKR-001", "Dockerfile explicitly runs as root"),
+        ("CS-DKR-002", "Mutable latest base image tag"),
+        ("CS-DKR-003", "No USER instruction"),
+        ("CS-CMP-001", "Privileged Compose service"),
+        ("CS-CMP-002", "Host network mode"),
+        ("CS-CMP-003", "Docker socket mount"),
+        ("CS-CMP-004", "Wildcard host port binding"),
+        ("CS-TF-001", "Public S3 ACL"),
+        ("CS-TF-002", "World-open IPv4 CIDR"),
+        ("CS-TF-003", "EBS encryption explicitly disabled"),
+    ]:
+        console.print(f"{rule:14} {description}")

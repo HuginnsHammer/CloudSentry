@@ -11,7 +11,7 @@ from scanner.rules.compose import scan_compose
 from scanner.rules.dockerfile import scan_dockerfile
 from scanner.rules.terraform import scan_terraform
 from scanner.scoring import summarize
-from scanner.suppression import apply_suppressions
+from scanner.suppression import apply_suppressions, directive_warnings
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 
@@ -66,6 +66,7 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
                 if isinstance(data, dict) and "services" in data:
                     current = scan_compose(data, display, source)
             result.findings.extend(apply_suppressions(current, source))
+            result.warnings.extend(directive_warnings(current, source, display))
             result.files_scanned += 1
         except (OSError, UnicodeError) as exc:
             result.errors.append(ScanError(file_path=display, kind="input", message=str(exc)))

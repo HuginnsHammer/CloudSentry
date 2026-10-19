@@ -1,15 +1,13 @@
 """Static checks for literal Terraform security misconfigurations."""
 
+import re
 from typing import Any
 
 from scanner.models import Finding, Severity
+from scanner.rules.locate import Span, child_block_spans, find_line, find_resource_span
 from scanner.rules.shared import make_finding
 
 _WORLD_OPEN_CIDRS = {"0.0.0.0/0", "::/0"}
-
-
-def _line(text: str, needle: str) -> int | None:
-    return next((i for i, line in enumerate(text.splitlines(), 1) if needle in line), None)
 
 
 def _world_open_cidrs(attrs: dict[str, Any]) -> list[str]:
@@ -18,7 +16,9 @@ def _world_open_cidrs(attrs: dict[str, Any]) -> list[str]:
     for key in ("cidr_blocks", "ipv6_cidr_blocks"):
         values = attrs.get(key)
         if isinstance(values, list):
-            found.extend(value for value in values if isinstance(value, str) and value in _WORLD_OPEN_CIDRS)
+            found.extend(
+                value for value in values if isinstance(value, str) and value in _WORLD_OPEN_CIDRS
+            )
     for key in ("cidr_ipv4", "cidr_ipv6"):
         value = attrs.get(key)
         if isinstance(value, str) and value in _WORLD_OPEN_CIDRS:
@@ -29,17 +29,22 @@ def _world_open_cidrs(attrs: dict[str, Any]) -> list[str]:
 def _append_open_ingress_finding(
     findings: list[Finding],
     *,
-    text: str,
+    lines: list[str],
+    span: Span | None,
     path: str,
     resource: str,
     attrs: dict[str, Any],
     context: str = "ingress",
 ) -> None:
+    """Report a world-open ingress; ``span`` is the narrowest known block holding the CIDR."""
     cidrs = _world_open_cidrs(attrs)
     if not cidrs:
         return
 
     cidr = cidrs[0]
+    line = None
+    if span is not None:
+        line = find_line(lines, span, rf'"{re.escape(cidr)}"') or span[0] + 1
     port_context = ", ".join(
         f"{key}={attrs[key]!r}"
         for key in ("protocol", "ip_protocol", "from_port", "to_port")
@@ -56,7 +61,7 @@ def _append_open_ingress_finding(
             severity=Severity.HIGH,
             category="network-exposure",
             file_path=path,
-            line=_line(text, cidr),
+            line=line,
             resource=resource,
             evidence="; ".join(evidence_parts),
             impact="Services covered by this ingress rule may be reachable from any address in the specified IP family, subject to ports and other network controls.",
@@ -68,6 +73,7 @@ def _append_open_ingress_finding(
 
 def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding]:
     findings: list[Finding] = []
+    lines = text.splitlines()
     for block in parsed.get("resource", []) or []:
         if not isinstance(block, dict):
             continue
@@ -85,11 +91,13 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                     if not isinstance(attrs, dict):
                         continue
                     resource = f"{resource_type}.{name}"
+                    # Restrict every line lookup to this resource's own block.
+                    span = find_resource_span(lines, resource_type, str(name))
+                    header_line = span[0] + 1 if span else None
 
-                    if (
-                        resource_type == "aws_s3_bucket_acl"
-                        and str(attrs.get("acl", "")).lower() in {"public-read", "public-read-write"}
-                    ):
+                    if resource_type == "aws_s3_bucket_acl" and str(
+                        attrs.get("acl", "")
+                    ).lower() in {"public-read", "public-read-write"}:
                         findings.append(
                             make_finding(
                                 rule_id="CS-TF-001",
@@ -98,7 +106,7 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                                 severity=Severity.CRITICAL,
                                 category="cloud-storage",
                                 file_path=path,
-                                line=_line(text, "aws_s3_bucket_acl"),
+                                line=header_line,
                                 resource=resource,
                                 evidence=f"acl = {attrs.get('acl')}",
                                 impact="Objects may be exposed or modified publicly depending on effective bucket settings.",
@@ -107,15 +115,28 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                         )
 
                     # Legacy standalone rule: direction is explicit, so only ingress is reported.
-                    if resource_type == "aws_security_group_rule" and attrs.get("type") == "ingress":
+                    if (
+                        resource_type == "aws_security_group_rule"
+                        and attrs.get("type") == "ingress"
+                    ):
                         _append_open_ingress_finding(
-                            findings, text=text, path=path, resource=resource, attrs=attrs
+                            findings,
+                            lines=lines,
+                            span=span,
+                            path=path,
+                            resource=resource,
+                            attrs=attrs,
                         )
 
                     # Newer AWS provider resource is ingress-only by definition.
                     if resource_type == "aws_vpc_security_group_ingress_rule":
                         _append_open_ingress_finding(
-                            findings, text=text, path=path, resource=resource, attrs=attrs
+                            findings,
+                            lines=lines,
+                            span=span,
+                            path=path,
+                            resource=resource,
+                            attrs=attrs,
                         )
 
                     # Inline ingress blocks are nested inside aws_security_group resources.
@@ -124,17 +145,31 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                         if isinstance(ingress_blocks, dict):
                             ingress_blocks = [ingress_blocks]
                         if isinstance(ingress_blocks, list):
-                            for ingress in ingress_blocks:
+                            # Parsed ingress entries follow source order, so the nth entry
+                            # maps to the nth `ingress { }` block; fall back to the resource.
+                            block_spans = child_block_spans(lines, span, "ingress") if span else []
+                            for position, ingress in enumerate(ingress_blocks):
                                 if isinstance(ingress, dict):
+                                    block_span = (
+                                        block_spans[position]
+                                        if position < len(block_spans)
+                                        else span
+                                    )
                                     _append_open_ingress_finding(
                                         findings,
-                                        text=text,
+                                        lines=lines,
+                                        span=block_span,
                                         path=path,
                                         resource=resource,
                                         attrs=ingress,
                                     )
 
                     if resource_type == "aws_ebs_volume" and attrs.get("encrypted") is False:
+                        encrypted_line = None
+                        if span:
+                            encrypted_line = (
+                                find_line(lines, span, r"\bencrypted\s*=") or header_line
+                            )
                         findings.append(
                             make_finding(
                                 rule_id="CS-TF-003",
@@ -143,7 +178,7 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                                 severity=Severity.HIGH,
                                 category="data-protection",
                                 file_path=path,
-                                line=_line(text, "encrypted"),
+                                line=encrypted_line,
                                 resource=resource,
                                 evidence="encrypted = false",
                                 impact="Data at rest may not receive expected EBS encryption protections.",
