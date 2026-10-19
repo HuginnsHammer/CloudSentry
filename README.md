@@ -31,7 +31,7 @@ Requires Python 3.12+.
 Open http://127.0.0.1:5173. Keep the API bound to loopback: its endpoint accepts local filesystem paths and is not safe to expose to untrusted clients.
 
 ## Exit codes
-0 = no findings at or above the selected severity threshold; 1 = qualifying findings; 2 = input/parser/usage error. A clean scan is not proof that a configuration is secure.
+0 = no findings at or above the selected severity threshold; 1 = qualifying findings; 2 = at least one file could not be scanned (parse error, unreadable or oversized input) or the command was misused. 2 takes precedence over 1, so a CI gate cannot pass while part of the target went unscanned. A clean scan is not proof that a configuration is secure.
 
 ## Development
 
