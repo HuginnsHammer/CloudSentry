@@ -2,45 +2,116 @@
 
 **Find the misconfiguration before it becomes an incident.**
 
-CloudSentry is a lightweight, local-first static configuration auditor for Terraform, Dockerfiles, and Docker Compose. It works without cloud credentials, an account, an AI model, or a hosted security API.
+CloudSentry is a lightweight, local-first static configuration auditor for Terraform, Dockerfiles, and Docker Compose. It checks configuration files without cloud credentials, an account, an AI model, or a hosted security API.
 
-> Early development: checks are heuristic static analysis, not a guarantee of security. See docs/limitations.md.
+> **Early development:** CloudSentry uses heuristic static analysis. Findings need to be reviewed in context, and a clean scan is not proof that a configuration is secure. See [docs/limitations.md](docs/limitations.md).
 
-## Features
-- CLI with terminal and JSON reports.
-- Terraform HCL, Dockerfile, and Docker Compose YAML checks.
-- Stable rule IDs, severity, confidence, evidence, impact, remediation, fingerprints, source locations, and reasoned suppressions.
-- FastAPI endpoint and React + TypeScript dashboard for local scanning.
-- No applying Terraform, building images, starting containers, or executing scanned files.
+## What it does
 
-## Quick start
-Requires Python 3.12+.
+- Scans Terraform, Dockerfiles, and Docker Compose YAML.
+- Reports rule IDs, severity, confidence, evidence, impact, remediation, fingerprints, and source locations.
+- Supports terminal and JSON CLI reports, plus a local FastAPI API and React + TypeScript dashboard.
+- Supports reasoned suppressions.
+- Does not apply Terraform, build images, start containers, or execute scanned files.
 
-    python -m venv .venv
-    source .venv/bin/activate
-    python -m pip install -e '.[dev]'
-    cloudsentry scan examples --format text
-    cloudsentry scan examples --format json --output report.json
-    pytest
+## Requirements
 
-## Run API and dashboard
+- Python 3.12 or newer
+- Node.js and npm (for the dashboard)
 
-    uvicorn scanner.api.app:app --host 127.0.0.1 --port 8000
-    cd frontend && npm install && npm run dev
+## Quick start: CLI
 
-Open http://127.0.0.1:5173. Keep the API bound to loopback: its endpoint accepts local filesystem paths and is not safe to expose to untrusted clients.
+From the repository root:
+
+```sh
+python -m venv .venv
+.venv/bin/python -m pip install -e '.[dev]'
+
+# Human-readable report
+.venv/bin/cloudsentry scan examples --format text
+
+# JSON report written to report.json
+.venv/bin/cloudsentry scan examples --format json --output report.json
+```
+
+These commands use the virtual environment directly, so activating it is optional and the commands work in Fish as well as common POSIX shells.
+
+## Run the dashboard locally
+
+Run the API and frontend in **two separate terminals**. Start both from the repository checkout.
+
+**Terminal 1 — API**
+
+```sh
+cd ~/CloudSentry
+.venv/bin/uvicorn scanner.api.app:app --host 127.0.0.1 --port 8000
+```
+
+**Terminal 2 — frontend**
+
+```sh
+cd ~/CloudSentry/frontend
+npm install
+npm run dev -- --host 127.0.0.1
+```
+
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser. Enter the path to a configuration file or directory on the **same machine running the API**, then select **Run scan**. The API health endpoint is available at [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health).
+
+**Security note:** Keep the API bound to loopback (`127.0.0.1`). The scan endpoint accepts local filesystem paths and is intended for local development; do not expose it to a network or untrusted clients.
+
+## Try a small demo scan
+
+This creates two deliberately insecure sample files in a temporary directory. Use `/tmp/cloudsentry-demo` as the dashboard target path after starting the API and frontend.
+
+```sh
+mkdir -p /tmp/cloudsentry-demo
+
+printf '%s\n' \
+  'FROM ubuntu:latest' \
+  'USER root' \
+  > /tmp/cloudsentry-demo/Dockerfile
+
+printf '%s\n' \
+  'resource "aws_security_group" "demo" {' \
+  '  ingress {' \
+  '    from_port   = 0' \
+  '    to_port     = 65535' \
+  '    protocol    = "tcp"' \
+  '    cidr_blocks = ["0.0.0.0/0"]' \
+  '  }' \
+  '}' \
+  > /tmp/cloudsentry-demo/main.tf
+```
+
+The demo is intentionally unsafe so the scanner has findings to display. Do not use these example settings in a real deployment.
+
+## Development checks
+
+From the repository root:
+
+```sh
+.venv/bin/pytest
+.venv/bin/ruff check .
+```
+
+Build and type-check the frontend:
+
+```sh
+cd frontend
+npm install
+npm run build
+```
 
 ## Exit codes
-0 = no findings at or above the selected severity threshold; 1 = qualifying findings; 2 = at least one file could not be scanned (parse error, unreadable or oversized input) or the command was misused. 2 takes precedence over 1, so a CI gate cannot pass while part of the target went unscanned. A clean scan is not proof that a configuration is secure.
 
-## Development
+- `0` — no findings at or above the selected severity threshold.
+- `1` — qualifying findings were reported.
+- `2` — at least one file could not be scanned (for example, a parse error, unreadable input, or oversized input), or the command was misused.
 
-    pytest
-    ruff check .
-
-The initial Ruff gate checks for undefined names. Formatting and broader style rules are follow-up hardening work; see the development notes.
+Exit code `2` takes precedence over `1`, so a CI gate cannot pass when part of the target went unscanned.
 
 ## Responsible use
-Scan configurations you own or are authorized to assess. Verify findings against deployment context and current provider guidance. See SECURITY.md for reporting.
 
-MIT License; see LICENSE.
+Scan configurations you own or are authorized to assess. Review findings against your deployment context and current provider guidance. See [SECURITY.md](SECURITY.md) for reporting instructions.
+
+MIT License; see [LICENSE](LICENSE).
