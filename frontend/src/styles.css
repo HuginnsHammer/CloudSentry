@@ -12,3 +12,8 @@
 .finding-filter option{background:#101828;color:#e5eaf5}
 .reset-filters{margin-top:8px;padding:8px 12px;border:1px solid #31564f;border-radius:7px;background:#142b36;color:#75e2c5;font:11px 'DM Sans',sans-serif;cursor:pointer}
 @media(max-width:850px){.findings-heading{align-items:flex-start}.finding-controls{width:100%}.finding-search{flex:1}.finding-search input{width:100%;max-width:none}}
+
+
+/* Make incomplete and failed scans visually distinct from clean completion. */
+.status-value.error-state{color:#ff9eaa!important}
+.status-value.partial-state{color:#ffbe8c!important}
