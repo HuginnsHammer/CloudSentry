@@ -1,6 +1,7 @@
 """Exit-code contract: 0 clean, 1 findings, 2 anything that could not be scanned."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
