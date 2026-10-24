@@ -1,6 +1,7 @@
 """Exit-code contract: 0 clean, 1 findings, 2 anything that could not be scanned."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -143,3 +144,13 @@ def test_rules_command_describes_ipv4_and_ipv6_coverage():
     result = runner.invoke(app, ["rules"])
     assert result.exit_code == 0
     assert "World-open IPv4 or IPv6 CIDR" in result.stdout
+
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="named pipes are not supported on this platform")
+def test_nonregular_input_exits_two(tmp_path: Path):
+    target = tmp_path / "scan-target.fifo"
+    os.mkfifo(target)
+    result = _run(target)
+    assert result.exit_code == 2
+    assert "not a regular file or directory" in result.stdout
