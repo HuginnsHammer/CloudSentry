@@ -115,7 +115,7 @@ def rules() -> None:
         ("CS-CMP-003", "Docker socket mount"),
         ("CS-CMP-004", "Wildcard host port binding"),
         ("CS-TF-001", "Public S3 ACL"),
-        ("CS-TF-002", "World-open IPv4 CIDR"),
+        ("CS-TF-002", "World-open IPv4 or IPv6 CIDR"),
         ("CS-TF-003", "EBS encryption explicitly disabled"),
     ]:
         console.print(f"{rule:14} {description}")
