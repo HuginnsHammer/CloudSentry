@@ -22,6 +22,10 @@ type Finding = {
   impact: string;
   remediation: string;
   evidence: string;
+  confidence: string;
+  category: string;
+  suppressed: boolean;
+  suppression_reason: string | null;
 };
 
 type ScanError = { file_path: string; kind: string; message: string };
@@ -52,6 +56,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [severityFilter, setSeverityFilter] = useState('ALL');
+  const [showSuppressed, setShowSuppressed] = useState(false);
 
   async function runScan() {
     setBusy(true);
@@ -79,6 +84,7 @@ export default function App() {
       setResult((await response.json()) as Result);
       setSearchQuery('');
       setSeverityFilter('ALL');
+      setShowSuppressed(false);
     } catch (e) {
       if (e instanceof TypeError) {
         setError('Could not connect to the local API at 127.0.0.1:8000. Start the API and try again.');
@@ -90,7 +96,10 @@ export default function App() {
     }
   }
 
-  const findings = result?.findings ?? [];
+  const allFindings = result?.findings ?? [];
+  const activeFindings = allFindings.filter((finding) => !finding.suppressed);
+  const suppressedFindings = allFindings.filter((finding) => finding.suppressed);
+  const findings = showSuppressed ? allFindings : activeFindings;
   const visibleFindings = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return findings
@@ -105,12 +114,14 @@ export default function App() {
           finding.evidence,
           finding.impact,
           finding.remediation,
+          finding.suppression_reason ?? '',
         ].some((value) => value.toLowerCase().includes(query));
       })
       .sort(
         (a, b) =>
+          Number(a.suppressed) - Number(b.suppressed) ||
           (severityRank[a.severity.toLowerCase()] ?? 99) -
-          (severityRank[b.severity.toLowerCase()] ?? 99),
+            (severityRank[b.severity.toLowerCase()] ?? 99),
       );
   }, [findings, searchQuery, severityFilter]);
 
@@ -185,8 +196,12 @@ export default function App() {
           </article>
           <article className="metric">
             <span>FINDINGS</span>
-            <div>{result ? findings.length : '—'} <AlertTriangle /></div>
-            <small>Detections returned by engine</small>
+            <div>{result ? activeFindings.length : '—'} <AlertTriangle /></div>
+            <small>
+              {result && suppressedFindings.length
+                ? `${suppressedFindings.length} suppressed finding(s)`
+                : 'Active detections returned by engine'}
+            </small>
           </article>
           <article className="metric">
             <span>RISK SCORE</span>
@@ -211,13 +226,21 @@ export default function App() {
 
         <div className="section-heading findings-heading">
           <div>
-            <h2>Findings <span className="count">{findings.length}</span></h2>
+            <h2>Findings <span className="count">{activeFindings.length}</span></h2>
             <p className="muted">
-              {result && findings.length
-                ? `Showing ${visibleFindings.length} of ${findings.length} · highest severity first`
+              {result && activeFindings.length
+                ? `Showing ${visibleFindings.length} of ${findings.length} ${showSuppressed ? 'reported' : 'active'} finding(s) · highest severity first`
                 : 'Prioritize by severity and verify the evidence.'}
             </p>
           </div>
+          {result && suppressedFindings.length > 0 && (
+            <button
+              className={`suppressed-toggle ${showSuppressed ? 'selected' : ''}`}
+              onClick={() => setShowSuppressed((value) => !value)}
+            >
+              {showSuppressed ? 'Hide' : 'Show'} suppressed ({suppressedFindings.length})
+            </button>
+          )}
           {result && findings.length > 0 && (
             <div className="finding-controls">
               <label className="finding-search">
@@ -263,11 +286,19 @@ export default function App() {
           ) : findings.length === 0 ? (
             <div className="empty">
               {result.status === 'partial' ? <AlertTriangle size={30} /> : <CheckCircle2 size={30} />}
-              <h3>{result.status === 'partial' ? 'No findings in the files scanned' : 'No findings at this scan scope'}</h3>
+              <h3>
+                {result.status === 'partial'
+                  ? 'No findings in the files scanned'
+                  : suppressedFindings.length
+                    ? 'No active findings at this scan scope'
+                    : 'No findings at this scan scope'}
+              </h3>
               <p>
                 {result.status === 'partial'
                   ? 'This scan was incomplete. Review the errors below before relying on the result.'
-                  : 'This is not proof that the configuration is secure.'}
+                  : suppressedFindings.length
+                    ? `${suppressedFindings.length} finding(s) are suppressed. Use “Show suppressed” to review their evidence and reasons. A clean active result is not proof that the configuration is secure.`
+                    : 'This is not proof that the configuration is secure.'}
               </p>
             </div>
           ) : visibleFindings.length === 0 ? (
@@ -292,7 +323,10 @@ export default function App() {
                 <div className="finding-main">
                   <div className="finding-title">
                     <h3>{finding.title}</h3>
-                    <code>{finding.rule_id}</code>
+                    <div className="finding-tags">
+                      <code>{finding.rule_id}</code>
+                      {finding.suppressed && <span className="suppressed-badge">SUPPRESSED</span>}
+                    </div>
                   </div>
                   <p>{finding.description}</p>
                   <div className="location">
@@ -303,6 +337,10 @@ export default function App() {
                     <p><b>Evidence:</b> {finding.evidence}</p>
                     <p><b>Impact:</b> {finding.impact}</p>
                     <p><b>Remediation:</b> {finding.remediation}</p>
+                    {finding.suppressed && (
+                      <p><b>Suppression reason:</b> {finding.suppression_reason || 'No reason provided'}</p>
+                    )}
+                    <p><b>Confidence:</b> {finding.confidence}</p>
                   </details>
                 </div>
               </article>

@@ -17,3 +17,10 @@
 /* Make incomplete and failed scans visually distinct from clean completion. */
 .status-value.error-state{color:#ff9eaa!important}
 .status-value.partial-state{color:#ffbe8c!important}
+
+
+/* Suppressed findings remain available for audit but are distinct from active risk. */
+.suppressed-toggle{padding:8px 11px;border:1px solid #66533a;border-radius:7px;background:#2a241b;color:#f0cd91;font:10px 'DM Sans',sans-serif;cursor:pointer}
+.suppressed-toggle.selected{background:#44331d;border-color:#a67b3d;color:#ffe0a6}
+.finding-tags{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.suppressed-badge{display:inline-block;padding:3px 6px;border:1px solid #78613a;border-radius:4px;background:#332a1c;color:#f0cd91;font:9px 'DM Mono',monospace;letter-spacing:.4px}
