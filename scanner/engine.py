@@ -39,7 +39,44 @@ def discover(paths: Iterable[Path]) -> list[Path]:
 
 def scan_paths(paths: Iterable[Path]) -> ScanResult:
     result = ScanResult(status="ok")
-    for path in discover(paths):
+    requested = list(paths)
+    discovered = discover(requested)
+
+    # Never report a clean scan when the requested target contained no supported files.
+    # Explicit unsupported files are errors; unsupported files inside a directory are
+    # ignored unless the directory contains no supported configuration at all.
+    if not requested:
+        result.errors.append(
+            ScanError(
+                file_path=".",
+                kind="discovery",
+                message="No scan paths were provided.",
+            )
+        )
+    for item in requested:
+        if item.is_file() and detect_kind(item) is None:
+            result.errors.append(
+                ScanError(
+                    file_path=str(item),
+                    kind="unsupported",
+                    message="Unsupported file type. Expected a Dockerfile, .tf, .yaml, or .yml Compose file.",
+                )
+            )
+        elif item.is_dir() and not any(
+            candidate == item or item in candidate.parents for candidate in discovered
+        ):
+            result.errors.append(
+                ScanError(
+                    file_path=str(item),
+                    kind="discovery",
+                    message="No supported configuration files found in this directory.",
+                )
+            )
+    if not requested:
+        result.status = "error"
+        return result
+
+    for path in discovered:
         display = str(path)
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
@@ -63,8 +100,25 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
                 except yaml.YAMLError as exc:
                     result.errors.append(ScanError(file_path=display, kind="parse", message=f"YAML parse failed: {exc}"))
                     continue
-                if isinstance(data, dict) and "services" in data:
-                    current = scan_compose(data, display, source)
+                if not isinstance(data, dict) or "services" not in data:
+                    result.errors.append(
+                        ScanError(
+                            file_path=display,
+                            kind="unsupported",
+                            message="YAML file is not a Docker Compose document with a top-level services mapping",
+                        )
+                    )
+                    continue
+                if not isinstance(data["services"], dict):
+                    result.errors.append(
+                        ScanError(
+                            file_path=display,
+                            kind="parse",
+                            message="Docker Compose 'services' must be a mapping",
+                        )
+                    )
+                    continue
+                current = scan_compose(data, display, source)
             result.findings.extend(apply_suppressions(current, source))
             result.warnings.extend(directive_warnings(current, source, display))
             result.files_scanned += 1
