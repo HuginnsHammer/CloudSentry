@@ -107,3 +107,53 @@ def test_cli_writes_sarif_report_and_keeps_findings_exit_code(tmp_path: Path):
     document = json.loads(report.read_text(encoding="utf-8"))
     assert document["version"] == "2.1.0"
     assert {item["ruleId"] for item in document["runs"][0]["results"]} == {"CS-DKR-001"}
+
+
+
+def test_cli_sarif_preserves_partial_scan_diagnostics_and_exit_code(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text(
+        "FROM python:3.12-slim\\nUSER root\\n", encoding="utf-8"
+    )
+    (tmp_path / "broken.tf").write_text(
+        'resource "aws_ebs_volume" "broken" {', encoding="utf-8"
+    )
+    report = tmp_path / "report.sarif"
+
+    result = runner.invoke(
+        app,
+        ["scan", str(tmp_path), "--format", "sarif", "--output", str(report)],
+    )
+
+    assert result.exit_code == 2
+    document = json.loads(report.read_text(encoding="utf-8"))
+    run = document["runs"][0]
+    assert run["properties"]["scanStatus"] == "partial"
+    assert {item["ruleId"] for item in run["results"]} == {"CS-DKR-001"}
+    invocation = run["invocations"][0]
+    assert invocation["executionSuccessful"] is False
+    assert any(
+        notification["level"] == "error"
+        and "parse" in notification["message"]["text"]
+        for notification in invocation["toolExecutionNotifications"]
+    )
+
+
+def test_cli_sarif_keeps_suppressed_findings_and_justification(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text(
+        "FROM python:3.12-slim\\n"
+        "# cloudsentry:ignore CS-DKR-001 -- build stage only\\n"
+        "USER root\\n",
+        encoding="utf-8",
+    )
+    report = tmp_path / "report.sarif"
+
+    result = runner.invoke(
+        app,
+        ["scan", str(tmp_path), "--format", "sarif", "--output", str(report)],
+    )
+
+    assert result.exit_code == 0
+    finding = json.loads(report.read_text(encoding="utf-8"))["runs"][0]["results"][0]
+    assert finding["ruleId"] == "CS-DKR-001"
+    assert finding["suppressions"][0]["status"] == "accepted"
+    assert finding["suppressions"][0]["justification"] == "build stage only"
