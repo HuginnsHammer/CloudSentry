@@ -67,7 +67,7 @@ cd ~/CloudSentry
 
 ```sh
 cd ~/CloudSentry/frontend
-npm install
+npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
@@ -114,7 +114,7 @@ Build and type-check the frontend:
 
 ```sh
 cd frontend
-npm install
+npm ci
 npm run build
 ```
 
