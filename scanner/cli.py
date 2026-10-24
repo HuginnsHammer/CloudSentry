@@ -109,7 +109,7 @@ def rules() -> None:
     for rule, description in [
         ("CS-DKR-001", "Dockerfile explicitly runs as root"),
         ("CS-DKR-002", "Mutable latest base image tag"),
-        ("CS-DKR-003", "No USER instruction"),
+        ("CS-DKR-003", "No effective runtime user configured"),
         ("CS-CMP-001", "Privileged Compose service"),
         ("CS-CMP-002", "Host network mode"),
         ("CS-CMP-003", "Docker socket mount"),
