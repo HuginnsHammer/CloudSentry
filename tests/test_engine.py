@@ -45,3 +45,41 @@ def test_unused_directive_becomes_a_warning_with_file_and_line(tmp_path: Path):
     assert warning.file_path == str(dockerfile)
     assert warning.line_start == 3
     assert result.status == "ok"
+
+
+
+def test_directory_without_supported_files_is_an_error(tmp_path: Path):
+    (tmp_path / "README.md").write_text("Nothing to scan here.\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert len(result.errors) == 1
+    assert result.errors[0].kind == "discovery"
+    assert "No supported configuration files" in result.errors[0].message
+
+
+def test_unrelated_yaml_is_not_counted_as_a_successful_scan(tmp_path: Path):
+    manifest = tmp_path / "manifest.yaml"
+    manifest.write_text("apiVersion: v1\nkind: ConfigMap\n", encoding="utf-8")
+
+    result = scan_paths([manifest])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "unsupported"
+    assert "not a Docker Compose document" in result.errors[0].message
+
+
+def test_explicit_unsupported_file_prevents_a_false_clean_result(tmp_path: Path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM python:3.12-slim\nUSER app\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text("Not a scan target.\n", encoding="utf-8")
+
+    result = scan_paths([dockerfile, readme])
+
+    assert result.status == "partial"
+    assert result.files_scanned == 1
+    assert any(error.kind == "unsupported" and error.file_path == str(readme) for error in result.errors)
