@@ -54,7 +54,15 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
             )
         )
     for item in requested:
-        if item.is_file() and detect_kind(item) is None:
+        if not item.exists():
+            result.errors.append(
+                ScanError(
+                    file_path=str(item),
+                    kind="input",
+                    message="Scan path does not exist.",
+                )
+            )
+        elif item.is_file() and detect_kind(item) is None:
             result.errors.append(
                 ScanError(
                     file_path=str(item),
