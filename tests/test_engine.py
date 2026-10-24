@@ -83,3 +83,15 @@ def test_explicit_unsupported_file_prevents_a_false_clean_result(tmp_path: Path)
     assert result.status == "partial"
     assert result.files_scanned == 1
     assert any(error.kind == "unsupported" and error.file_path == str(readme) for error in result.errors)
+
+
+
+def test_nonexistent_scan_path_is_an_error(tmp_path: Path):
+    missing = tmp_path / "missing"
+
+    result = scan_paths([missing])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "input"
+    assert result.errors[0].file_path == str(missing)
