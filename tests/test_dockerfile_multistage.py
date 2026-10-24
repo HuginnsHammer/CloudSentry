@@ -63,3 +63,44 @@ USER nginx
 
     assert len(latest_findings) == 1
     assert latest_findings[0].line_start == 1
+
+
+
+def test_root_user_in_named_base_stage_is_inherited_by_final_stage():
+    source = """FROM alpine:3.20 AS base
+USER root
+RUN echo build
+FROM base AS runtime
+CMD ["sh"]
+"""
+    findings = scan_dockerfile(source, "Dockerfile")
+    root_findings = [finding for finding in findings if finding.rule_id == "CS-DKR-001"]
+
+    assert len(root_findings) == 1
+    assert root_findings[0].line_start == 2
+    assert "inheriting" in root_findings[0].description
+
+
+def test_non_root_user_in_named_base_stage_satisfies_runtime_user_check():
+    source = """FROM alpine:3.20 AS base
+USER app
+RUN echo build
+FROM base AS runtime
+CMD ["sh"]
+"""
+    findings = scan_dockerfile(source, "Dockerfile")
+
+    assert not any(finding.rule_id in {"CS-DKR-001", "CS-DKR-003"} for finding in findings)
+
+
+def test_final_stage_user_overrides_inherited_root_user():
+    source = """FROM alpine:3.20 AS base
+USER root
+RUN echo build
+FROM base AS runtime
+USER app
+CMD ["sh"]
+"""
+    findings = scan_dockerfile(source, "Dockerfile")
+
+    assert not any(finding.rule_id in {"CS-DKR-001", "CS-DKR-003"} for finding in findings)
