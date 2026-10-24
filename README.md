@@ -8,12 +8,24 @@ CloudSentry is a lightweight, local-first static configuration auditor for Terra
 
 ## What it does
 
-- Scans Terraform, Dockerfiles, and Docker Compose YAML.
-- Reports rule IDs, severity, confidence, evidence, impact, remediation, fingerprints, and source locations.
+- Scans selected security patterns in Terraform, Dockerfiles, and Docker Compose YAML.
+- Reports stable rule IDs, severity, confidence, evidence, impact, remediation, fingerprints, and source locations.
 - Supports terminal, JSON, and SARIF 2.1.0 CLI reports, plus a local FastAPI API and React + TypeScript dashboard.
-- Includes scan errors and warnings in SARIF invocation diagnostics, so incomplete scans are visible in machine-readable output.
+- Includes scan errors and warnings in SARIF invocation diagnostics, so incomplete scans remain visible in machine-readable output.
 - Supports reasoned suppressions and preserves suppression justifications in machine-readable reports.
 - Does not apply Terraform, build images, start containers, or execute scanned files.
+
+## Dashboard features
+
+The dashboard provides a local interface for starting scans and reviewing results. It includes:
+
+- Search across findings and severity filtering.
+- Clear **Complete**, **Partial**, and **Error** scan states.
+- Finding details with evidence and remediation guidance.
+- Suppressed findings hidden from the default active-risk view, with a toggle to inspect them and their suppression reasons.
+- Clear feedback when a target cannot be scanned or the API cannot be reached.
+
+A scan with unsupported inputs or files that could not be inspected is not presented as a clean result. See [Exit codes](#exit-codes) and [Limitations](docs/limitations.md).
 
 ## Requirements
 
@@ -70,20 +82,20 @@ This creates two deliberately insecure sample files in a temporary directory. Us
 ```sh
 mkdir -p /tmp/cloudsentry-demo
 
-printf '%s\n' \
-  'FROM ubuntu:latest' \
-  'USER root' \
+printf '%s\\n' \\
+  'FROM ubuntu:latest' \\
+  'USER root' \\
   > /tmp/cloudsentry-demo/Dockerfile
 
-printf '%s\n' \
-  'resource "aws_security_group" "demo" {' \
-  '  ingress {' \
-  '    from_port   = 0' \
-  '    to_port     = 65535' \
-  '    protocol    = "tcp"' \
-  '    cidr_blocks = ["0.0.0.0/0"]' \
-  '  }' \
-  '}' \
+printf '%s\\n' \\
+  'resource "aws_security_group" "demo" {' \\
+  '  ingress {' \\
+  '    from_port   = 0' \\
+  '    to_port     = 65535' \\
+  '    protocol    = "tcp"' \\
+  '    cidr_blocks = ["0.0.0.0/0"]' \\
+  '  }' \\
+  '}' \\
   > /tmp/cloudsentry-demo/main.tf
 ```
 
@@ -109,10 +121,10 @@ npm run build
 ## Exit codes
 
 - `0` — no findings at or above the selected severity threshold.
-- `1` — qualifying findings were reported.
+- `1` — qualifying active findings were reported.
 - `2` — the scan is incomplete, no supported configuration files were found, an explicit input is unsupported, or the command was misused (for example, a parse error, unreadable input, or oversized input).
 
-Exit code `2` takes precedence over `1`, so a CI gate cannot pass when part of the target went unscanned.
+Exit code `2` takes precedence over `1`, so a CI gate cannot pass when part of the target went unscanned. Suppressed findings are retained in reports with their reason but do not count as active findings for the risk score or exit status.
 
 ## Responsible use
 
