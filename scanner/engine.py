@@ -80,6 +80,14 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
                     message="No supported configuration files found in this directory.",
                 )
             )
+        elif not item.is_file() and not item.is_dir():
+            result.errors.append(
+                ScanError(
+                    file_path=str(item),
+                    kind="input",
+                    message="Scan path is not a regular file or directory.",
+                )
+            )
     if not requested:
         result.status = "error"
         return result
