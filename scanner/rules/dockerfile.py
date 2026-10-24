@@ -2,7 +2,7 @@
 
 import re
 
-from scanner.models import Severity
+from scanner.models import Finding, Severity
 from scanner.rules.shared import make_finding
 
 
