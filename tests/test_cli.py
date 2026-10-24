@@ -136,3 +136,10 @@ def test_explicit_unsupported_file_exits_two(tmp_path: Path):
     readme = tmp_path / "README.md"
     readme.write_text("Nothing to scan here.\n", encoding="utf-8")
     assert _run(readme).exit_code == 2
+
+
+
+def test_rules_command_describes_ipv4_and_ipv6_coverage():
+    result = runner.invoke(app, ["rules"])
+    assert result.exit_code == 0
+    assert "World-open IPv4 or IPv6 CIDR" in result.stdout
