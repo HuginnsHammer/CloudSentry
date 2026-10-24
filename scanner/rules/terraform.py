@@ -98,11 +98,11 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                     if resource_type in {"aws_s3_bucket_acl", "aws_s3_bucket"} and str(
                         attrs.get("acl", "")
                     ).lower() in {"public-read", "public-read-write"}:
-                        acl_line = (
-                            find_line(lines, span, r"\bacl\s*=") or header_line
-                            if span
-                            else header_line
-                        )
+                        # Preserve the established header location for the dedicated ACL
+                        # resource; for aws_s3_bucket, point to the ACL assignment itself.
+                        acl_line = header_line
+                        if resource_type == "aws_s3_bucket" and span:
+                            acl_line = find_line(lines, span, r"\bacl\s*=") or header_line
                         findings.append(
                             make_finding(
                                 rule_id="CS-TF-001",
