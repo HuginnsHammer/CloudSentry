@@ -99,7 +99,7 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                         attrs.get("acl", "")
                     ).lower() in {"public-read", "public-read-write"}:
                         acl_line = (
-                            find_line(lines, span, r"\\bacl\\s*=") or header_line
+                            find_line(lines, span, r"\bacl\s*=") or header_line
                             if span
                             else header_line
                         )
