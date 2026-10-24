@@ -82,21 +82,21 @@ This creates two deliberately insecure sample files in a temporary directory. Us
 ```sh
 mkdir -p /tmp/cloudsentry-demo
 
-printf '%s\\n' \\
-  'FROM ubuntu:latest' \\
-  'USER root' \\
-  > /tmp/cloudsentry-demo/Dockerfile
+cat > /tmp/cloudsentry-demo/Dockerfile <<'EOF'
+FROM ubuntu:latest
+USER root
+EOF
 
-printf '%s\\n' \\
-  'resource "aws_security_group" "demo" {' \\
-  '  ingress {' \\
-  '    from_port   = 0' \\
-  '    to_port     = 65535' \\
-  '    protocol    = "tcp"' \\
-  '    cidr_blocks = ["0.0.0.0/0"]' \\
-  '  }' \\
-  '}' \\
-  > /tmp/cloudsentry-demo/main.tf
+cat > /tmp/cloudsentry-demo/main.tf <<'EOF'
+resource "aws_security_group" "demo" {
+  ingress {
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+EOF
 ```
 
 The demo is intentionally unsafe so the scanner has findings to display. Do not use these example settings in a real deployment.
