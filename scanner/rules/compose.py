@@ -39,6 +39,23 @@ class _ServiceNode:
                         return item.start_mark.line + 1
         return self.key_line(key)
 
+    def port_line(self, index: int, key: str = "published") -> int:
+        """Line of a short port item or a useful key in a long-form port mapping."""
+        for key_node, value_node in self.node.value:
+            if (
+                isinstance(key_node, yaml.ScalarNode)
+                and key_node.value == "ports"
+                and isinstance(value_node, yaml.SequenceNode)
+                and index < len(value_node.value)
+            ):
+                item = value_node.value[index]
+                if isinstance(item, yaml.MappingNode):
+                    for item_key, _ in item.value:
+                        if isinstance(item_key, yaml.ScalarNode) and item_key.value == key:
+                            return item_key.start_mark.line + 1
+                return item.start_mark.line + 1
+        return self.key_line("ports")
+
 
 def _locate_services(source: str) -> dict[str, _ServiceNode]:
     """Map service names to their YAML nodes so findings carry accurate line numbers."""
@@ -80,6 +97,20 @@ def _port_binds_all_interfaces(port: str) -> bool:
             host_ip = value[1:closing]
             return host_ip in {"::", "0:0:0:0:0:0:0:0"}
     return False
+
+
+def _long_port_binds_all_interfaces(port: dict[str, Any]) -> bool:
+    """Recognize published Compose long-form ports exposed on all host interfaces."""
+    if port.get("published") is None or str(port.get("published")).strip() == "":
+        return False
+    host_ip = port.get("host_ip")
+    if host_ip is None or str(host_ip).strip() == "":
+        return True
+    return str(host_ip).strip().strip("[]") in {
+        "0.0.0.0",
+        "::",
+        "0:0:0:0:0:0:0:0",
+    }
 
 
 def scan_compose(data: Any, path: str, source: str) -> list[Finding]:
@@ -158,34 +189,49 @@ def scan_compose(data: Any, path: str, source: str) -> list[Finding]:
 
         ports = service.get("ports", [])
         if isinstance(ports, list):
-            for port in ports:
+            for index, port in enumerate(ports):
                 if isinstance(port, str) and _port_binds_all_interfaces(port):
-                    findings.append(
-                        make_finding(
-                            rule_id="CS-CMP-004",
-                            title="Port published on all host interfaces",
-                            description=(
-                                f"Service {name!r} publishes a port on all host interfaces, explicitly or by default."
-                            ),
-                            severity=Severity.MEDIUM,
-                            category="network-exposure",
-                            file_path=path,
-                            line=(
-                                where.item_line("ports", lambda value, port=port: value == port)
-                                if where
-                                else None
-                            ),
-                            resource=str(name),
-                            evidence=port,
-                            impact=(
-                                "The service may be reachable on other interfaces depending on "
-                                "firewall and routing."
-                            ),
-                            remediation=(
-                                "Bind to 127.0.0.1 for local-only access or restrict exposure "
-                                "with network controls."
-                            ),
-                            confidence="medium",
-                        )
+                    evidence = port
+                    line = (
+                        where.item_line("ports", lambda value, port=port: value == port)
+                        if where
+                        else None
                     )
+                elif isinstance(port, dict) and _long_port_binds_all_interfaces(port):
+                    host_ip = port.get("host_ip")
+                    evidence = (
+                        f"long-form port: published={port.get('published')}, "
+                        f"target={port.get('target')}, host_ip={host_ip or 'default (all interfaces)'}"
+                    )
+                    line = (
+                        where.port_line(index, "host_ip" if host_ip else "published")
+                        if where
+                        else None
+                    )
+                else:
+                    continue
+                findings.append(
+                    make_finding(
+                        rule_id="CS-CMP-004",
+                        title="Port published on all host interfaces",
+                        description=(
+                            f"Service {name!r} publishes a port on all host interfaces, explicitly or by default."
+                        ),
+                        severity=Severity.MEDIUM,
+                        category="network-exposure",
+                        file_path=path,
+                        line=line,
+                        resource=str(name),
+                        evidence=evidence,
+                        impact=(
+                            "The service may be reachable on other interfaces depending on "
+                            "firewall and routing."
+                        ),
+                        remediation=(
+                            "Bind to 127.0.0.1 for local-only access or restrict exposure "
+                            "with network controls."
+                        ),
+                        confidence="medium",
+                    )
+                )
     return findings
