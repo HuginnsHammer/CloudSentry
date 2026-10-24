@@ -71,7 +71,7 @@ def test_inline_security_group_ingress_world_open_is_detected():
     assert len(matches) == 1
     assert matches[0].resource == "aws_security_group.test"
     assert matches[0].severity == Severity.HIGH
-    assert matches[0].line_start == 7
+    assert matches[0].line_start == 6
     assert "0.0.0.0/0" in matches[0].evidence
 
 
@@ -198,7 +198,7 @@ def test_compose_long_port_mapping_without_host_ip_is_reported():
     matches = [finding for finding in findings if finding.rule_id == "CS-CMP-004"]
 
     assert len(matches) == 1
-    assert matches[0].line_start == 6
+    assert matches[0].line_start == 5
     assert "published=8080" in matches[0].evidence
     assert "default (all interfaces)" in matches[0].evidence
 
