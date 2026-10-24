@@ -8,6 +8,7 @@ from rich.table import Table
 
 from scanner.engine import result_json, scan_paths
 from scanner.models import Severity
+from scanner.sarif import result_sarif
 from scanner.scoring import summarize
 
 app = typer.Typer(
@@ -24,7 +25,7 @@ EXIT_ERROR = 2
 @app.command()
 def scan(
     paths: Annotated[list[Path], typer.Argument(exists=True, readable=True)],
-    output_format: Annotated[str, typer.Option("--format", help="text or json")] = "text",
+    output_format: Annotated[str, typer.Option("--format", help="text, json, or sarif")] = "text",
     output: Annotated[Path | None, typer.Option("--output", "-o")] = None,
     severity: Annotated[str, typer.Option("--severity")] = "info",
 ) -> None:
@@ -35,16 +36,16 @@ def scan(
     or the command was misused. 2 takes precedence over 1 so a CI gate cannot pass while
     part of the target went unscanned.
     """
-    if output_format not in {"text", "json"}:
-        raise typer.BadParameter("format must be text or json")
+    if output_format not in {"text", "json", "sarif"}:
+        raise typer.BadParameter("format must be text, json, or sarif")
     try:
         threshold = list(Severity).index(Severity(severity.lower()))
     except ValueError as exc:
         raise typer.BadParameter("unknown severity") from exc
 
     result = scan_paths(paths)
-    # The report keeps suppressed findings (flagged, with their reason) as an audit trail;
-    # only active findings drive the table, the risk score, and the exit status.
+    # Keep suppressed findings in machine-readable reports as an audit trail;
+    # only active findings drive the text table, risk score, and exit status.
     reported = [
         finding
         for finding in result.findings
@@ -57,6 +58,8 @@ def scan(
 
     if output_format == "json":
         rendered = result_json(result)
+    elif output_format == "sarif":
+        rendered = result_sarif(result)
     else:
         table = Table(title=f"CloudSentry — {result.files_scanned} file(s) scanned")
         for column in ("Severity", "Rule", "Location", "Finding"):
@@ -74,7 +77,7 @@ def scan(
             if suppressed_count:
                 console.print(
                     f"{suppressed_count} suppressed finding(s) not shown; "
-                    "--format json lists them with their reasons."
+                    "--format json or --format sarif includes their reasons."
                 )
             for warning in result.warnings:
                 location = f"{warning.file_path}:{warning.line_start or '?'}"
