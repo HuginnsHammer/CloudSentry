@@ -153,3 +153,28 @@ def test_compose_container_port_only_is_not_reported_as_host_published():
     data = {"services": {"app": {"ports": ["80"]}}}
     findings = scan_compose(data, "compose.yml", source)
     assert not any(finding.rule_id == "CS-CMP-004" for finding in findings)
+
+
+
+def test_terraform_bucket_resource_public_acl_is_detected_at_acl_line():
+    source = '''resource "aws_s3_bucket" "assets" {
+  bucket = "cloudsentry-example-assets"
+  acl    = "public-read"
+}
+'''
+    findings = scan_terraform(source, "main.tf", hcl2.loads(source))
+    matches = [finding for finding in findings if finding.rule_id == "CS-TF-001"]
+    assert len(matches) == 1
+    assert matches[0].resource == "aws_s3_bucket.assets"
+    assert matches[0].line_start == 3
+    assert matches[0].severity == Severity.CRITICAL
+
+
+def test_terraform_bucket_resource_private_acl_is_not_reported():
+    source = '''resource "aws_s3_bucket" "assets" {
+  bucket = "cloudsentry-example-assets"
+  acl    = "private"
+}
+'''
+    findings = scan_terraform(source, "main.tf", hcl2.loads(source))
+    assert not any(finding.rule_id == "CS-TF-001" for finding in findings)
