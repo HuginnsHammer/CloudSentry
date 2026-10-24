@@ -49,6 +49,16 @@ def _finding_result(finding: Finding, rule_index: int) -> dict[str, object]:
             region["endLine"] = finding.line_end
         physical_location["region"] = region
 
+    properties: dict[str, object] = {
+        "category": finding.category,
+        "confidence": finding.confidence,
+        "evidence": finding.evidence,
+        "impact": finding.impact,
+        "remediation": finding.remediation,
+    }
+    if finding.resource:
+        properties["resource"] = finding.resource
+
     result: dict[str, object] = {
         "ruleId": finding.rule_id,
         "ruleIndex": rule_index,
@@ -56,16 +66,8 @@ def _finding_result(finding: Finding, rule_index: int) -> dict[str, object]:
         "message": {"text": f"{finding.title}: {finding.description}"},
         "locations": [{"physicalLocation": physical_location}],
         "partialFingerprints": {"cloudsentry/fingerprint": finding.fingerprint},
-        "properties": {
-            "category": finding.category,
-            "confidence": finding.confidence,
-            "evidence": finding.evidence,
-            "impact": finding.impact,
-            "remediation": finding.remediation,
-        },
+        "properties": properties,
     }
-    if finding.resource:
-        result["properties"]["resource"] = finding.resource  # type: ignore[index]
     if finding.suppressed:
         suppression: dict[str, str] = {"kind": "inSource", "status": "accepted"}
         if finding.suppression_reason:
@@ -95,7 +97,7 @@ def result_sarif(result: ScanResult) -> str:
             ]
         notifications.append(notification)
     for warning in result.warnings:
-        notification = {
+        notification: dict[str, object] = {
             "level": "warning",
             "message": {"text": warning.message},
             "properties": {"kind": "scan-warning"},
