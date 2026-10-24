@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "slug": "cloudsentry",
+  "title": "CloudSentry",
+  "repository": "HuginnsHammer/CloudSentry",
+  "summary": "A local-first static configuration auditor for selected security patterns in Terraform, Dockerfiles, and Docker Compose.",
+  "capabilities": [
+    "Ten documented rule IDs across Terraform, Dockerfiles, and Docker Compose.",
+    "Findings include severity, confidence, evidence, impact, remediation, fingerprints, and source locations.",
+    "CLI reports in text, JSON, and SARIF 2.1.0, plus a local FastAPI API and React + TypeScript dashboard.",
+    "SARIF invocation diagnostics preserve scan warnings and errors; machine-readable reports retain suppression justifications.",
+    "Dashboard distinguishes Complete, Partial, and Error scans, supports search and severity filtering, and allows suppressed findings to be inspected.",
+    "Reason-required, narrow suppressions; incomplete scans take exit code 2 rather than being presented as clean."
+  ],
+  "evidence": [
+    "Repository README documents CLI usage, dashboard setup, exit codes, responsible use, and limitations.",
+    "Regression tests cover SARIF output, suppression behavior, source attribution, and CLI integration paths."
+  ],
+  "limitations": [
+    "Static checks are heuristic and need contextual review; a clean scan does not prove a configuration is secure.",
+    "Terraform checks do not resolve variables, locals, modules, dynamic blocks, provider defaults, or effective permissions.",
+    "The dashboard API accepts local filesystem paths and should remain bound to loopback for local development."
+  ]
+}
