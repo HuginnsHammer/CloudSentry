@@ -63,6 +63,25 @@ def _locate_services(source: str) -> dict[str, _ServiceNode]:
     return {}
 
 
+def _port_binds_all_interfaces(port: str) -> bool:
+    """Recognize Compose short port syntax that binds on wildcard host interfaces."""
+    value = port.split("/", 1)[0]
+
+    # An omitted host IP defaults to all host interfaces when a host port is published.
+    if value.count(":") == 1:
+        return True
+
+    # Preserve support for explicit wildcard IPv4/IPv6 forms, including bracketed IPv6.
+    if value.startswith(("0.0.0.0:", ":::")):
+        return True
+    if value.startswith("["):
+        closing = value.find("]")
+        if closing >= 0:
+            host_ip = value[1:closing]
+            return host_ip in {"::", "0:0:0:0:0:0:0:0"}
+    return False
+
+
 def scan_compose(data: Any, path: str, source: str) -> list[Finding]:
     findings: list[Finding] = []
     services = data.get("services", {}) if isinstance(data, dict) else {}
@@ -140,15 +159,13 @@ def scan_compose(data: Any, path: str, source: str) -> list[Finding]:
         ports = service.get("ports", [])
         if isinstance(ports, list):
             for port in ports:
-                if isinstance(port, str) and (
-                    port.startswith("0.0.0.0:") or port.startswith(":::")
-                ):
+                if isinstance(port, str) and _port_binds_all_interfaces(port):
                     findings.append(
                         make_finding(
                             rule_id="CS-CMP-004",
                             title="Port published on all host interfaces",
                             description=(
-                                f"Service {name!r} publishes a port on a wildcard host address."
+                                f"Service {name!r} publishes a port on all host interfaces, explicitly or by default."
                             ),
                             severity=Severity.MEDIUM,
                             category="network-exposure",
