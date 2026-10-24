@@ -112,7 +112,7 @@ def test_cli_writes_sarif_report_and_keeps_findings_exit_code(tmp_path: Path):
 
 def test_cli_sarif_preserves_partial_scan_diagnostics_and_exit_code(tmp_path: Path):
     (tmp_path / "Dockerfile").write_text(
-        "FROM python:3.12-slim\\nUSER root\\n", encoding="utf-8"
+        "FROM python:3.12-slim\nUSER root\n", encoding="utf-8"
     )
     (tmp_path / "broken.tf").write_text(
         'resource "aws_ebs_volume" "broken" {', encoding="utf-8"
@@ -140,9 +140,9 @@ def test_cli_sarif_preserves_partial_scan_diagnostics_and_exit_code(tmp_path: Pa
 
 def test_cli_sarif_keeps_suppressed_findings_and_justification(tmp_path: Path):
     (tmp_path / "Dockerfile").write_text(
-        "FROM python:3.12-slim\\n"
-        "# cloudsentry:ignore CS-DKR-001 -- build stage only\\n"
-        "USER root\\n",
+        "FROM python:3.12-slim\n"
+        "# cloudsentry:ignore CS-DKR-001 -- build stage only\n"
+        "USER root\n",
         encoding="utf-8",
     )
     report = tmp_path / "report.sarif"
