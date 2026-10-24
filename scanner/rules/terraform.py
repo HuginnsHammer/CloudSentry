@@ -95,18 +95,26 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                     span = find_resource_span(lines, resource_type, str(name))
                     header_line = span[0] + 1 if span else None
 
-                    if resource_type == "aws_s3_bucket_acl" and str(
+                    if resource_type in {"aws_s3_bucket_acl", "aws_s3_bucket"} and str(
                         attrs.get("acl", "")
                     ).lower() in {"public-read", "public-read-write"}:
+                        acl_line = (
+                            find_line(lines, span, r"\\bacl\\s*=") or header_line
+                            if span
+                            else header_line
+                        )
                         findings.append(
                             make_finding(
                                 rule_id="CS-TF-001",
                                 title="S3 bucket ACL allows public access",
-                                description="An S3 ACL explicitly grants public read or write access.",
+                                description=(
+                                    "An S3 bucket resource or ACL resource explicitly grants "
+                                    "public read or write access."
+                                ),
                                 severity=Severity.CRITICAL,
                                 category="cloud-storage",
                                 file_path=path,
-                                line=header_line,
+                                line=acl_line,
                                 resource=resource,
                                 evidence=f"acl = {attrs.get('acl')}",
                                 impact="Objects may be exposed or modified publicly depending on effective bucket settings.",
