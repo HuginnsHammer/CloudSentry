@@ -110,7 +110,7 @@ npm run build
 
 - `0` — no findings at or above the selected severity threshold.
 - `1` — qualifying findings were reported.
-- `2` — at least one file could not be scanned (for example, a parse error, unreadable input, or oversized input), or the command was misused.
+- `2` — the scan is incomplete, no supported configuration files were found, an explicit input is unsupported, or the command was misused (for example, a parse error, unreadable input, or oversized input).
 
 Exit code `2` takes precedence over `1`, so a CI gate cannot pass when part of the target went unscanned.
 
