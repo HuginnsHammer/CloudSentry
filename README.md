@@ -10,8 +10,9 @@ CloudSentry is a lightweight, local-first static configuration auditor for Terra
 
 - Scans Terraform, Dockerfiles, and Docker Compose YAML.
 - Reports rule IDs, severity, confidence, evidence, impact, remediation, fingerprints, and source locations.
-- Supports terminal and JSON CLI reports, plus a local FastAPI API and React + TypeScript dashboard.
-- Supports reasoned suppressions.
+- Supports terminal, JSON, and SARIF 2.1.0 CLI reports, plus a local FastAPI API and React + TypeScript dashboard.
+- Includes scan errors and warnings in SARIF invocation diagnostics, so incomplete scans are visible in machine-readable output.
+- Supports reasoned suppressions and preserves suppression justifications in machine-readable reports.
 - Does not apply Terraform, build images, start containers, or execute scanned files.
 
 ## Requirements
@@ -32,9 +33,12 @@ python -m venv .venv
 
 # JSON report written to report.json
 .venv/bin/cloudsentry scan examples --format json --output report.json
+
+# SARIF 2.1.0 report for compatible code-scanning tools
+.venv/bin/cloudsentry scan examples --format sarif --output cloudsentry.sarif
 ```
 
-These commands use the virtual environment directly, so activating it is optional and the commands work in Fish as well as common POSIX shells.
+These commands use the virtual environment directly, so activating it is optional and the commands work in Fish as well as common POSIX shells. Exit codes remain the same for all output formats: `0` means no qualifying active findings, `1` means qualifying findings were found, and `2` means the scan was incomplete or the command was misused.
 
 ## Run the dashboard locally
 
