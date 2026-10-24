@@ -178,3 +178,86 @@ def test_terraform_bucket_resource_private_acl_is_not_reported():
 '''
     findings = scan_terraform(source, "main.tf", hcl2.loads(source))
     assert not any(finding.rule_id == "CS-TF-001" for finding in findings)
+
+
+
+def test_compose_long_port_mapping_without_host_ip_is_reported():
+    source = '''services:
+  app:
+    ports:
+      - target: 80
+        published: "8080"
+'''
+    data = {
+        "services": {
+            "app": {"ports": [{"target": 80, "published": "8080"}]}
+        }
+    }
+
+    findings = scan_compose(data, "compose.yml", source)
+    matches = [finding for finding in findings if finding.rule_id == "CS-CMP-004"]
+
+    assert len(matches) == 1
+    assert matches[0].line_start == 6
+    assert "published=8080" in matches[0].evidence
+    assert "default (all interfaces)" in matches[0].evidence
+
+
+def test_compose_long_port_mapping_explicit_wildcard_is_reported_at_host_ip():
+    source = '''services:
+  app:
+    ports:
+      - target: 80
+        published: "8080"
+        host_ip: "0.0.0.0"
+'''
+    data = {
+        "services": {
+            "app": {
+                "ports": [
+                    {"target": 80, "published": "8080", "host_ip": "0.0.0.0"}
+                ]
+            }
+        }
+    }
+
+    findings = scan_compose(data, "compose.yml", source)
+    matches = [finding for finding in findings if finding.rule_id == "CS-CMP-004"]
+
+    assert len(matches) == 1
+    assert matches[0].line_start == 7
+    assert "host_ip=0.0.0.0" in matches[0].evidence
+
+
+def test_compose_long_port_mapping_loopback_is_not_reported():
+    source = '''services:
+  app:
+    ports:
+      - target: 80
+        published: "8080"
+        host_ip: "127.0.0.1"
+'''
+    data = {
+        "services": {
+            "app": {
+                "ports": [
+                    {"target": 80, "published": "8080", "host_ip": "127.0.0.1"}
+                ]
+            }
+        }
+    }
+
+    findings = scan_compose(data, "compose.yml", source)
+    assert not any(finding.rule_id == "CS-CMP-004" for finding in findings)
+
+
+def test_compose_long_port_mapping_without_published_port_is_not_reported():
+    source = '''services:
+  app:
+    ports:
+      - target: 80
+'''
+    data = {"services": {"app": {"ports": [{"target": 80}]}}}
+
+    findings = scan_compose(data, "compose.yml", source)
+    assert not any(finding.rule_id == "CS-CMP-004" for finding in findings)
