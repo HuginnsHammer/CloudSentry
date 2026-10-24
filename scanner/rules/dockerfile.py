@@ -2,7 +2,7 @@
 
 import re
 
-from scanner.models import Finding, Severity
+from scanner.models import Severity
 from scanner.rules.shared import make_finding
 
 
@@ -19,7 +19,7 @@ def _stages(lines: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
     """Split instructions at FROM boundaries, retaining original line numbers."""
     stages: list[list[tuple[int, str]]] = []
     for item in lines:
-        if re.match(r"^FROM\\s+", item[1], re.IGNORECASE):
+        if re.match(r"^FROM\s+", item[1], re.IGNORECASE):
             stages.append([])
         if stages:
             stages[-1].append(item)
@@ -32,14 +32,14 @@ def _stages(lines: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
 def _is_root_user(instruction: str) -> bool:
     """Recognize root by username or UID, including an optional group suffix."""
     return bool(
-        re.match(r"^USER\\s+(?:root|0+)(?::[^\\s#]+)?\\s*(?:#.*)?$", instruction, re.IGNORECASE)
+        re.match(r"^USER\s+(?:root|0+)(?::[^\s#]+)?\s*(?:#.*)?$", instruction, re.IGNORECASE)
     )
 
 
 def _from_details(instruction: str) -> tuple[str | None, str | None]:
     """Return a FROM base reference and optional stage alias."""
     match = re.match(
-        r"^FROM\\s+(?:(?:--platform=\\S+)\\s+)*(\\S+)(?:\\s+AS\\s+([^\\s#]+))?",
+        r"^FROM\s+(?:(?:--platform=\S+)\s+)*(\S+)(?:\s+AS\s+([^\s#]+))?",
         instruction,
         re.IGNORECASE,
     )
@@ -58,14 +58,14 @@ def _effective_stage_users(
 
     for stage in stages:
         from_instruction = next(
-            (line for _, line in stage if re.match(r"^FROM\\s+", line, re.IGNORECASE)),
+            (line for _, line in stage if re.match(r"^FROM\s+", line, re.IGNORECASE)),
             None,
         )
         base, alias = _from_details(from_instruction) if from_instruction else (None, None)
         effective_user = aliases.get(base.lower()) if base and base.lower() in aliases else None
 
         for number, instruction in stage:
-            if re.match(r"^USER\\s+", instruction, re.IGNORECASE):
+            if re.match(r"^USER\s+", instruction, re.IGNORECASE):
                 effective_user = (number, instruction)
 
         if alias:
@@ -84,7 +84,7 @@ def scan_dockerfile(text: str, path: str) -> list[Finding]:
 
     # Mutable-tag checks apply to every stage.
     for number, line in lines:
-        if line.upper().startswith("FROM ") and re.search(r":latest(?:\\s|$)", line, re.I):
+        if line.upper().startswith("FROM ") and re.search(r":latest(?:\s|$)", line, re.I):
             findings.append(
                 make_finding(
                     rule_id="CS-DKR-002",
