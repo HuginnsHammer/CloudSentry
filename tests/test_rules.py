@@ -128,3 +128,28 @@ def test_modern_ipv6_ingress_rule_is_detected():
     matches = [finding for finding in findings if finding.rule_id == "CS-TF-002"]
     assert len(matches) == 1
     assert "::/0" in matches[0].evidence
+
+
+
+def test_compose_port_without_host_ip_is_reported_as_wildcard_binding():
+    source = 'services:\n  app:\n    ports:\n      - "8080:80"\n'
+    data = {"services": {"app": {"ports": ["8080:80"]}}}
+    findings = scan_compose(data, "compose.yml", source)
+    matches = [finding for finding in findings if finding.rule_id == "CS-CMP-004"]
+    assert len(matches) == 1
+    assert matches[0].line_start == 4
+    assert matches[0].evidence == "8080:80"
+
+
+def test_compose_loopback_port_binding_is_not_reported():
+    source = 'services:\n  app:\n    ports:\n      - "127.0.0.1:8080:80"\n'
+    data = {"services": {"app": {"ports": ["127.0.0.1:8080:80"]}}}
+    findings = scan_compose(data, "compose.yml", source)
+    assert not any(finding.rule_id == "CS-CMP-004" for finding in findings)
+
+
+def test_compose_container_port_only_is_not_reported_as_host_published():
+    source = 'services:\n  app:\n    ports:\n      - "80"\n'
+    data = {"services": {"app": {"ports": ["80"]}}}
+    findings = scan_compose(data, "compose.yml", source)
+    assert not any(finding.rule_id == "CS-CMP-004" for finding in findings)
