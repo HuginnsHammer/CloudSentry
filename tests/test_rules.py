@@ -261,3 +261,45 @@ def test_compose_long_port_mapping_without_published_port_is_not_reported():
 
     findings = scan_compose(data, "compose.yml", source)
     assert not any(finding.rule_id == "CS-CMP-004" for finding in findings)
+
+
+
+def test_terraform_s3_acl_all_users_grant_is_detected():
+    source = '''resource "aws_s3_bucket_acl" "assets" {
+  bucket = "cloudsentry-example-assets"
+  access_control_policy {
+    grant {
+      grantee {
+        type = "Group"
+        uri  = "http://acs.amazonaws.com/groups/global/AllUsers"
+      }
+      permission = "READ"
+    }
+  }
+}
+'''
+    findings = scan_terraform(source, "main.tf", hcl2.loads(source))
+    matches = [finding for finding in findings if finding.rule_id == "CS-TF-001"]
+    assert len(matches) == 1
+    assert matches[0].resource == "aws_s3_bucket_acl.assets"
+    assert matches[0].line_start == 6
+    assert "AllUsers" in matches[0].evidence
+    assert "READ" in matches[0].evidence
+
+
+def test_terraform_s3_acl_nonpublic_group_grant_is_not_reported_as_public():
+    source = '''resource "aws_s3_bucket_acl" "assets" {
+  bucket = "cloudsentry-example-assets"
+  access_control_policy {
+    grant {
+      grantee {
+        type = "Group"
+        uri  = "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+      }
+      permission = "READ"
+    }
+  }
+}
+'''
+    findings = scan_terraform(source, "main.tf", hcl2.loads(source))
+    assert not any(finding.rule_id == "CS-TF-001" for finding in findings)
