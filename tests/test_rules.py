@@ -282,7 +282,7 @@ def test_terraform_s3_acl_all_users_grant_is_detected():
     matches = [finding for finding in findings if finding.rule_id == "CS-TF-001"]
     assert len(matches) == 1
     assert matches[0].resource == "aws_s3_bucket_acl.assets"
-    assert matches[0].line_start == 6
+    assert matches[0].line_start == 7
     assert "AllUsers" in matches[0].evidence
     assert "READ" in matches[0].evidence
 
