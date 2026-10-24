@@ -29,6 +29,13 @@ def _stages(lines: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
     return stages
 
 
+def _is_root_user(instruction: str) -> bool:
+    """Recognize root by username or UID, including an optional group suffix."""
+    return bool(
+        re.match(r"^USER\s+(?:root|0+)(?::[^\s#]+)?\s*(?:#.*)?$", instruction, re.IGNORECASE)
+    )
+
+
 def scan_dockerfile(text: str, path: str) -> list[Finding]:
     findings: list[Finding] = []
     lines = _instruction_lines(text)
@@ -57,7 +64,7 @@ def scan_dockerfile(text: str, path: str) -> list[Finding]:
             )
 
     for number, line in runtime_stage:
-        if re.match(r"^USER\s+(?:0|root)\s*(?:#.*)?$", line, re.IGNORECASE):
+        if _is_root_user(line):
             findings.append(
                 make_finding(
                     rule_id="CS-DKR-001",
