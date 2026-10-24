@@ -8,6 +8,36 @@ from scanner.rules.locate import Span, child_block_spans, find_line, find_resour
 from scanner.rules.shared import make_finding
 
 _WORLD_OPEN_CIDRS = {"0.0.0.0/0", "::/0"}
+_PUBLIC_ALL_USERS_URI = "http://acs.amazonaws.com/groups/global/AllUsers"
+
+
+def _contains_all_users_grantee(value: Any) -> bool:
+    """Return whether a nested ACL grantee grants access to S3's AllUsers group."""
+    if isinstance(value, dict):
+        if value.get("uri") == _PUBLIC_ALL_USERS_URI:
+            return True
+        return any(_contains_all_users_grantee(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_all_users_grantee(child) for child in value)
+    return False
+
+
+def _public_acl_grant_permissions(value: Any) -> list[str]:
+    """Return permissions granted to the anonymous S3 AllUsers group."""
+    found: list[str] = []
+    if isinstance(value, dict):
+        permission = value.get("permission")
+        if (
+            isinstance(permission, str)
+            and _contains_all_users_grantee(value.get("grantee"))
+        ):
+            found.append(permission)
+        for child in value.values():
+            found.extend(_public_acl_grant_permissions(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_public_acl_grant_permissions(child))
+    return list(dict.fromkeys(found))
 
 
 def _world_open_cidrs(attrs: dict[str, Any]) -> list[str]:
@@ -95,32 +125,46 @@ def scan_terraform(text: str, path: str, parsed: dict[str, Any]) -> list[Finding
                     span = find_resource_span(lines, resource_type, str(name))
                     header_line = span[0] + 1 if span else None
 
-                    if resource_type in {"aws_s3_bucket_acl", "aws_s3_bucket"} and str(
-                        attrs.get("acl", "")
-                    ).lower() in {"public-read", "public-read-write"}:
-                        # Preserve the established header location for the dedicated ACL
-                        # resource; for aws_s3_bucket, point to the ACL assignment itself.
-                        acl_line = header_line
-                        if resource_type == "aws_s3_bucket" and span:
-                            acl_line = find_line(lines, span, r"\bacl\s*=") or header_line
-                        findings.append(
-                            make_finding(
-                                rule_id="CS-TF-001",
-                                title="S3 bucket ACL allows public access",
-                                description=(
-                                    "An S3 bucket resource or ACL resource explicitly grants "
-                                    "public read or write access."
-                                ),
-                                severity=Severity.CRITICAL,
-                                category="cloud-storage",
-                                file_path=path,
-                                line=acl_line,
-                                resource=resource,
-                                evidence=f"acl = {attrs.get('acl')}",
-                                impact="Objects may be exposed or modified publicly depending on effective bucket settings.",
-                                remediation="Remove public ACL grants and enforce S3 Block Public Access and least-privilege bucket policies.",
-                            )
+                    if resource_type in {"aws_s3_bucket_acl", "aws_s3_bucket"}:
+                        acl = str(attrs.get("acl", "")).lower()
+                        public_permissions = _public_acl_grant_permissions(
+                            attrs.get("access_control_policy", [])
                         )
+                        public_acl = acl in {"public-read", "public-read-write"} or bool(
+                            public_permissions
+                        )
+                        if public_acl:
+                            # Point to the explicit ACL assignment or AllUsers grant when
+                            # possible; keep the resource header as a reliable fallback.
+                            acl_line = header_line
+                            if span and acl in {"public-read", "public-read-write"}:
+                                if resource_type == "aws_s3_bucket":
+                                    acl_line = find_line(lines, span, r"\bacl\s*=") or header_line
+                            elif span and public_permissions:
+                                acl_line = find_line(lines, span, r"AllUsers") or header_line
+                            evidence = (
+                                f"access_control_policy grants AllUsers: {', '.join(public_permissions)}"
+                                if public_permissions
+                                else f"acl = {attrs.get('acl')}"
+                            )
+                            findings.append(
+                                make_finding(
+                                    rule_id="CS-TF-001",
+                                    title="S3 bucket ACL allows public access",
+                                    description=(
+                                        "An S3 bucket resource or ACL resource explicitly grants "
+                                        "public access through a canned ACL or an AllUsers grant."
+                                    ),
+                                    severity=Severity.CRITICAL,
+                                    category="cloud-storage",
+                                    file_path=path,
+                                    line=acl_line,
+                                    resource=resource,
+                                    evidence=evidence,
+                                    impact="Objects may be exposed or modified publicly depending on effective bucket settings.",
+                                    remediation="Remove public ACL grants and enforce S3 Block Public Access and least-privilege bucket policies.",
+                                )
+                            )
 
                     # Legacy standalone rule: direction is explicit, so only ingress is reported.
                     if (
