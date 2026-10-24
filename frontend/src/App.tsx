@@ -24,7 +24,7 @@ type Finding = {
   evidence: string;
 };
 
-type ScanError = { file_path: string; message: string };
+type ScanError = { file_path: string; kind: string; message: string };
 
 type Result = {
   status: string;
@@ -63,13 +63,28 @@ export default function App() {
         body: JSON.stringify({ paths: [paths] }),
       });
       if (!response.ok) {
-        throw new Error((await response.text()) || 'API request failed');
+        let message = `API request failed (${response.status})`;
+        try {
+          const payload = (await response.json()) as { detail?: unknown };
+          if (typeof payload.detail === 'string') {
+            message = payload.detail;
+          } else if (payload.detail !== undefined) {
+            message = JSON.stringify(payload.detail);
+          }
+        } catch {
+          // Keep the status-based message if the response is not JSON.
+        }
+        throw new Error(message);
       }
       setResult((await response.json()) as Result);
       setSearchQuery('');
       setSeverityFilter('ALL');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not connect to local API');
+      if (e instanceof TypeError) {
+        setError('Could not connect to the local API at 127.0.0.1:8000. Start the API and try again.');
+      } else {
+        setError(e instanceof Error ? e.message : 'The scan request failed.');
+      }
     } finally {
       setBusy(false);
     }
@@ -149,7 +164,7 @@ export default function App() {
           </div>
           {error && (
             <div className="error">
-              <AlertTriangle size={16} /> {error}. Ensure the API is running at 127.0.0.1:8000.
+              <AlertTriangle size={16} /> {error}
             </div>
           )}
         </section>
@@ -180,10 +195,17 @@ export default function App() {
           </article>
           <article className="metric">
             <span>SCAN STATUS</span>
-            <div className="status-value">
-              {result ? (result.errors.length ? 'PARTIAL' : 'COMPLETE') : 'READY'} <CheckCircle2 />
+            <div className={`status-value ${result?.status === 'error' ? 'error-state' : result?.status === 'partial' ? 'partial-state' : ''}`}>
+              {result ? (result.status === 'error' ? 'ERROR' : result.status === 'partial' ? 'PARTIAL' : 'COMPLETE') : 'READY'}
+              {result?.status === 'error' || result?.status === 'partial' ? <AlertTriangle /> : <CheckCircle2 />}
             </div>
-            <small>{result ? result.errors.length + ' input/parser errors' : 'Waiting for a scan'}</small>
+            <small>
+              {result
+                ? result.errors.length
+                  ? `${result.errors.length} input/parser error(s)`
+                  : 'No input/parser errors'
+                : 'Waiting for a scan'}
+            </small>
           </article>
         </div>
 
@@ -232,11 +254,21 @@ export default function App() {
               <h3>Your findings will appear here</h3>
               <p>Run a scan against the included examples to see real detections.</p>
             </div>
+          ) : result.status === 'error' ? (
+            <div className="empty">
+              <AlertTriangle size={30} />
+              <h3>Scan could not inspect supported files</h3>
+              <p>Check the scan errors below, then select a Dockerfile, Terraform file, or Docker Compose document.</p>
+            </div>
           ) : findings.length === 0 ? (
             <div className="empty">
-              <CheckCircle2 size={30} />
-              <h3>No findings at this scan scope</h3>
-              <p>This is not proof that the configuration is secure.</p>
+              {result.status === 'partial' ? <AlertTriangle size={30} /> : <CheckCircle2 size={30} />}
+              <h3>{result.status === 'partial' ? 'No findings in the files scanned' : 'No findings at this scan scope'}</h3>
+              <p>
+                {result.status === 'partial'
+                  ? 'This scan was incomplete. Review the errors below before relying on the result.'
+                  : 'This is not proof that the configuration is secure.'}
+              </p>
             </div>
           ) : visibleFindings.length === 0 ? (
             <div className="empty">
@@ -280,7 +312,7 @@ export default function App() {
 
         {result?.errors.map((scanError, index) => (
           <div className="error" key={scanError.file_path + index}>
-            {scanError.file_path}: {scanError.message}
+            <b>{scanError.kind}</b> · {scanError.file_path}: {scanError.message}
           </div>
         ))}
 
