@@ -124,3 +124,15 @@ def test_unused_directive_is_a_warning_not_a_failure(tmp_path: Path):
     assert result.exit_code == 0
     data = json.loads(report.read_text(encoding="utf-8"))
     assert [warning["line_start"] for warning in data["warnings"]] == [3]
+
+
+
+def test_directory_without_supported_files_exits_two(tmp_path: Path):
+    (tmp_path / "README.md").write_text("Nothing to scan here.\n", encoding="utf-8")
+    assert _run(tmp_path).exit_code == 2
+
+
+def test_explicit_unsupported_file_exits_two(tmp_path: Path):
+    readme = tmp_path / "README.md"
+    readme.write_text("Nothing to scan here.\n", encoding="utf-8")
+    assert _run(readme).exit_code == 2
