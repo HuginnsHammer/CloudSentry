@@ -286,11 +286,19 @@ export default function App() {
           ) : findings.length === 0 ? (
             <div className="empty">
               {result.status === 'partial' ? <AlertTriangle size={30} /> : <CheckCircle2 size={30} />}
-              <h3>{result.status === 'partial' ? 'No findings in the files scanned' : 'No findings at this scan scope'}</h3>
+              <h3>
+                {result.status === 'partial'
+                  ? 'No findings in the files scanned'
+                  : suppressedFindings.length
+                    ? 'No active findings at this scan scope'
+                    : 'No findings at this scan scope'}
+              </h3>
               <p>
                 {result.status === 'partial'
                   ? 'This scan was incomplete. Review the errors below before relying on the result.'
-                  : 'This is not proof that the configuration is secure.'}
+                  : suppressedFindings.length
+                    ? `${suppressedFindings.length} finding(s) are suppressed. Use “Show suppressed” to review their evidence and reasons. A clean active result is not proof that the configuration is secure.`
+                    : 'This is not proof that the configuration is secure.'}
               </p>
             </div>
           ) : visibleFindings.length === 0 ? (
