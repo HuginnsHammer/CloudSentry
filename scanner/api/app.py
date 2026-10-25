@@ -1,9 +1,11 @@
 """Loopback-only API for local configuration scans."""
 
+import ipaddress
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from scanner.engine import scan_paths
@@ -13,6 +15,31 @@ app = FastAPI(
     version="0.1.0",
     description="Local static configuration audit API",
 )
+
+
+@app.middleware("http")
+async def require_loopback_client(request: Request, call_next):
+    """Reject network clients; the API is intended for local desktop use only."""
+    client = request.client
+    if client is None:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "CloudSentry API is restricted to loopback clients"},
+        )
+
+    try:
+        is_loopback = ipaddress.ip_address(client.host).is_loopback
+    except ValueError:
+        is_loopback = False
+
+    if not is_loopback:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "CloudSentry API is restricted to loopback clients"},
+        )
+
+    return await call_next(request)
+
 
 # Local development only; do not broaden this list without adding API authorization.
 app.add_middleware(
