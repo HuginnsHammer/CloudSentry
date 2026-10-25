@@ -4,13 +4,22 @@ from fastapi.testclient import TestClient
 
 from scanner.api.app import app
 
-client = TestClient(app)
+client = TestClient(app, client=("127.0.0.1", 50000))
 
 
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["mode"] == "local-static-analysis"
+
+
+def test_non_loopback_client_is_rejected():
+    remote_client = TestClient(app, client=("192.0.2.10", 50000))
+
+    response = remote_client.get("/health")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "CloudSentry API is restricted to loopback clients"
 
 
 def test_scan_rejects_missing_path():
