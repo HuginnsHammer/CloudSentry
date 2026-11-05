@@ -21,7 +21,7 @@ def build_engine(database_url: str | None = None, *, allow_sqlite: bool = False)
     url = make_url(value)
     if url.drivername == "postgresql":
         url = url.set(drivername="postgresql+psycopg")
-    if url.drivername == "sqlite" and allow_sqlite:
+    if url.drivername in {"sqlite", "sqlite+pysqlite"} and allow_sqlite:
         pass
     elif url.drivername != "postgresql+psycopg":
         raise ValueError(
@@ -30,7 +30,7 @@ def build_engine(database_url: str | None = None, *, allow_sqlite: bool = False)
         )
 
     engine = create_engine(url, pool_pre_ping=True)
-    if url.drivername == "sqlite":
+    if url.drivername in {"sqlite", "sqlite+pysqlite"}:
         @event.listens_for(engine, "connect")
         def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
             cursor = dbapi_connection.cursor()

@@ -89,9 +89,8 @@ def test_scan_finding_link_cannot_cross_tenant_boundary(session):
 def test_finding_assignee_must_be_member_of_same_tenant(session):
     org_a, _, project_a = seed_project(session, "a")
     _, user_b, _ = seed_project(session, "b")
-    create_finding(session, org_a, project_a, assigned_to_user_id=user_b.id)
     with pytest.raises(IntegrityError):
-        session.commit()
+        create_finding(session, org_a, project_a, assigned_to_user_id=user_b.id)
 
 
 def test_audit_actor_must_belong_to_recorded_tenant(session):
