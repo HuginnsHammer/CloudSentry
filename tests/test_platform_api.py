@@ -64,9 +64,10 @@ def test_platform_health_is_public(platform_client):
     assert response.json()["mode"] == "authenticated-platform-api"
 
 
-def test_platform_routes_require_authentication_by_default():
-    app.dependency_overrides.clear()
-    response = TestClient(app).get("/api/v1/organizations")
+def test_platform_routes_require_authentication_by_default(platform_client):
+    client, _, _ = platform_client
+    app.dependency_overrides.pop(get_current_user)
+    response = client.get("/api/v1/organizations")
     assert response.status_code == 401
 
 
