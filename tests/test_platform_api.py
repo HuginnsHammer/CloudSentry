@@ -1,6 +1,5 @@
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,16 +14,17 @@ def platform_client():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    org_a = Organization(name="Tenant A", slug="tenant-a")
-    org_b = Organization(name="Tenant B", slug="tenant-b")
+    org_a = Organization(id=uuid4(), name="Tenant A", slug="tenant-a")
+    org_b = Organization(id=uuid4(), name="Tenant B", slug="tenant-b")
     user = User(
+        id=uuid4(),
         email="analyst@example.test",
         display_name="Analyst",
         identity_provider="https://identity.example.test/",
         identity_subject="subject-123",
     )
-    project_a = Project(organization_id=org_a.id, name="Alpha", slug="alpha")
-    project_b = Project(organization_id=org_b.id, name="Bravo", slug="bravo")
+    project_a = Project(id=uuid4(), organization_id=org_a.id, name="Alpha", slug="alpha")
+    project_b = Project(id=uuid4(), organization_id=org_b.id, name="Bravo", slug="bravo")
     with factory() as session:
         session.add_all([org_a, org_b, user])
         session.flush()
