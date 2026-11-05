@@ -53,7 +53,7 @@ def test_environment_cannot_reference_another_tenant_project(session):
 
 def test_finding_cannot_reference_another_tenant_scan(session):
     org_a, _, project_a = seed_project(session, "a")
-    org_b, _, project_b = seed_project(session, "b")
+    org_b, _, _ = seed_project(session, "b")
     scan = Scan(
         organization_id=org_a.id, project_id=project_a.id, status=ScanStatus.COMPLETED,
         target="repository", scanner_version="0.2.0", summary={},
