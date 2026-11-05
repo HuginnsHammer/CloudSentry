@@ -31,6 +31,10 @@ class OIDCSettings:
         missing = [name for name, value in values.items() if not value]
         if missing:
             raise RuntimeError(f"OIDC configuration is incomplete: {', '.join(missing)}")
+        if not values["CLOUDSENTRY_OIDC_ISSUER"].startswith("https://"):
+            raise RuntimeError("CLOUDSENTRY_OIDC_ISSUER must use HTTPS")
+        if not values["CLOUDSENTRY_OIDC_JWKS_URL"].startswith("https://"):
+            raise RuntimeError("CLOUDSENTRY_OIDC_JWKS_URL must use HTTPS")
         return cls(
             issuer=values["CLOUDSENTRY_OIDC_ISSUER"],
             audience=values["CLOUDSENTRY_OIDC_AUDIENCE"],
