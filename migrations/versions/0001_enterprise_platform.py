@@ -38,7 +38,7 @@ def upgrade() -> None:
         "memberships",
         sa.Column("organization_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("role", sa.String(length=17), nullable=False),
+        sa.Column("role", sa.String(length=16), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.CheckConstraint(
             "role IN ('owner', 'admin', 'security_analyst', 'developer', 'viewer')",
@@ -120,7 +120,7 @@ def upgrade() -> None:
         sa.Column("rule_id", sa.String(160), nullable=False),
         sa.Column("title", sa.String(300), nullable=False),
         sa.Column("severity", sa.String(16), nullable=False),
-        sa.Column("status", sa.String(length=13), nullable=False),
+        sa.Column("status", sa.String(length=14), nullable=False),
         sa.Column("file_path", sa.String(2048), nullable=False),
         sa.Column("line_start", sa.Integer(), nullable=True),
         sa.Column("line_end", sa.Integer(), nullable=True),
