@@ -2,6 +2,8 @@
 from uuid import UUID
 
 from fastapi import Depends, FastAPI
+
+from scanner.api.findings import router as findings_router
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +19,9 @@ app = FastAPI(
     version="0.2.0",
     description="Authenticated organization and project API. Scanning is not exposed here.",
 )
+
+
+app.include_router(findings_router)
 
 
 @app.get("/health")
