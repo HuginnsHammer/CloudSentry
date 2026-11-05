@@ -17,7 +17,8 @@ authentication, or a hosted database.
   developer, or viewer role.
 - Project and Environment organize repositories and deployment contexts.
 - Scan stores a scan execution and status/summary.
-- Finding stores a finding snapshot, lifecycle state, evidence, remediation and assignee.
+- Finding is a stable project-level issue identity with lifecycle state, evidence, remediation and assignee.
+- ScanFinding records each scan that observed a stable finding, preserving history across repeated scans.
 - AuditEvent records an actor, action, target and structured details.
 
 Tenant ownership is represented in composite foreign keys, not only application
