@@ -16,6 +16,7 @@ from scanner.platform.models import (
     FindingStatus,
     Membership,
     MembershipRole,
+    Project,
     User,
 )
 
@@ -27,6 +28,17 @@ PRIVILEGED_ROLES = {
     MembershipRole.SECURITY_ANALYST,
 }
 DEVELOPER_STATUSES = {FindingStatus.IN_PROGRESS, FindingStatus.RESOLVED}
+
+
+def _require_project(organization_id: UUID, project_id: UUID, session: Session) -> None:
+    project = session.scalar(
+        select(Project).where(
+            Project.id == project_id,
+            Project.organization_id == organization_id,
+        )
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
 
 
 def _get_project_finding(
@@ -62,6 +74,7 @@ def list_project_findings(
 ) -> list[Finding]:
     if membership.organization_id != organization_id:
         raise HTTPException(status_code=404, detail="Project not found")
+    _require_project(organization_id, project_id, session)
     statement = select(Finding).where(
         Finding.organization_id == organization_id,
         Finding.project_id == project_id,
