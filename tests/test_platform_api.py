@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from scanner.api.platform_app import app
 from scanner.platform.dependencies import get_current_user, get_db_session
@@ -12,7 +13,11 @@ from scanner.platform.models import Base, Membership, MembershipRole, Organizati
 
 @pytest.fixture
 def platform_client():
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     org_a = Organization(id=uuid4(), name="Tenant A", slug="tenant-a")
