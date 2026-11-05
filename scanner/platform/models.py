@@ -161,18 +161,23 @@ class Scan(Base):
 
 
 class Finding(Base):
+    """Stable project-level issue identity, retained across repeated scans."""
     __tablename__ = "findings"
     __table_args__ = (
         UniqueConstraint("organization_id", "id", name="uq_findings_org_id"),
-        UniqueConstraint("scan_id", "fingerprint", name="uq_findings_scan_fingerprint"),
+        UniqueConstraint("organization_id", "project_id", "fingerprint", name="uq_findings_project_fingerprint"),
         ForeignKeyConstraint(
-            ["organization_id", "scan_id"], ["scans.organization_id", "scans.id"],
-            ondelete="CASCADE", name="fk_findings_scan_tenant",
+            ["organization_id", "project_id"], ["projects.organization_id", "projects.id"],
+            ondelete="CASCADE", name="fk_findings_project_tenant",
         ),
         ForeignKeyConstraint(
             ["organization_id", "assigned_to_user_id"],
             ["memberships.organization_id", "memberships.user_id"],
             name="fk_findings_assignee_membership",
+        ),
+        CheckConstraint(
+            "severity IN ('critical', 'high', 'medium', 'low', 'info')",
+            name="ck_findings_severity",
         ),
         CheckConstraint("line_start IS NULL OR line_start > 0", name="ck_findings_line_start_positive"),
         CheckConstraint("line_end IS NULL OR line_end > 0", name="ck_findings_line_end_positive"),
@@ -182,7 +187,7 @@ class Finding(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
-    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
     rule_id: Mapped[str] = mapped_column(String(160), nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -199,6 +204,29 @@ class Finding(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ScanFinding(Base):
+    """Immutable observation linking a scan run to a stable project finding."""
+    __tablename__ = "scan_findings"
+    __table_args__ = (
+        UniqueConstraint("scan_id", "finding_id", name="uq_scan_findings_scan_finding"),
+        ForeignKeyConstraint(
+            ["organization_id", "scan_id"], ["scans.organization_id", "scans.id"],
+            ondelete="CASCADE", name="fk_scan_findings_scan_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "finding_id"], ["findings.organization_id", "findings.id"],
+            ondelete="CASCADE", name="fk_scan_findings_finding_tenant",
+        ),
+        Index("ix_scan_findings_org_scan", "organization_id", "scan_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    scan_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    finding_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AuditEvent(Base):
