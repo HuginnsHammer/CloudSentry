@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 [project]
 name = "cloudsentry"
-version = "0.2.0"
+version = "0.1.0"
 description = "Local-first infrastructure security auditor with an evolving enterprise platform foundation"
 readme = "README.md"
 requires-python = ">=3.12"
