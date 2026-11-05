@@ -19,6 +19,37 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - run: pytest
       - run: ruff check .
+  platform-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cloudsentry
+          POSTGRES_PASSWORD: cloudsentry
+          POSTGRES_DB: cloudsentry_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cloudsentry -d cloudsentry_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CLOUDSENTRY_DATABASE_URL: postgresql://cloudsentry:cloudsentry@localhost:5432/cloudsentry_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e '.[dev]'
+      - name: Upgrade database to head
+        run: alembic upgrade head
+      - name: Verify downgrade
+        run: alembic downgrade base
+      - name: Verify clean re-upgrade
+        run: alembic upgrade head
   dashboard:
     runs-on: ubuntu-latest
     defaults:
