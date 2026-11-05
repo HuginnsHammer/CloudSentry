@@ -115,7 +115,7 @@ def upgrade() -> None:
         "findings",
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("organization_id", sa.Uuid(), nullable=False),
-        sa.Column("scan_id", sa.Uuid(), nullable=False),
+        sa.Column("project_id", sa.Uuid(), nullable=False),
         sa.Column("fingerprint", sa.String(128), nullable=False),
         sa.Column("rule_id", sa.String(160), nullable=False),
         sa.Column("title", sa.String(300), nullable=False),
@@ -134,11 +134,12 @@ def upgrade() -> None:
             "status IN ('open', 'triaged', 'in_progress', 'accepted_risk', 'resolved', 'false_positive')",
             name="finding_status",
         ),
+        sa.CheckConstraint("severity IN ('critical', 'high', 'medium', 'low', 'info')", name="ck_findings_severity"),
         sa.CheckConstraint("line_start IS NULL OR line_start > 0", name="ck_findings_line_start_positive"),
         sa.CheckConstraint("line_end IS NULL OR line_end > 0", name="ck_findings_line_end_positive"),
         sa.ForeignKeyConstraint(
-            ["organization_id", "scan_id"], ["scans.organization_id", "scans.id"],
-            ondelete="CASCADE", name="fk_findings_scan_tenant",
+            ["organization_id", "project_id"], ["projects.organization_id", "projects.id"],
+            ondelete="CASCADE", name="fk_findings_project_tenant",
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "assigned_to_user_id"],
@@ -147,10 +148,29 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("organization_id", "id", name="uq_findings_org_id"),
-        sa.UniqueConstraint("scan_id", "fingerprint", name="uq_findings_scan_fingerprint"),
+        sa.UniqueConstraint("organization_id", "project_id", "fingerprint", name="uq_findings_project_fingerprint"),
     )
     op.create_index("ix_findings_org_status_severity", "findings", ["organization_id", "status", "severity"])
     op.create_index("ix_findings_org_assignee", "findings", ["organization_id", "assigned_to_user_id"])
+    op.create_table(
+        "scan_findings",
+        sa.Column("id", sa.Uuid(), nullable=False),
+        sa.Column("organization_id", sa.Uuid(), nullable=False),
+        sa.Column("scan_id", sa.Uuid(), nullable=False),
+        sa.Column("finding_id", sa.Uuid(), nullable=False),
+        sa.Column("observed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "scan_id"], ["scans.organization_id", "scans.id"],
+            ondelete="CASCADE", name="fk_scan_findings_scan_tenant",
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "finding_id"], ["findings.organization_id", "findings.id"],
+            ondelete="CASCADE", name="fk_scan_findings_finding_tenant",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("scan_id", "finding_id", name="uq_scan_findings_scan_finding"),
+    )
+    op.create_index("ix_scan_findings_org_scan", "scan_findings", ["organization_id", "scan_id"])
     op.create_table(
         "audit_events",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -175,6 +195,8 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_audit_events_org_occurred", table_name="audit_events")
     op.drop_table("audit_events")
+    op.drop_index("ix_scan_findings_org_scan", table_name="scan_findings")
+    op.drop_table("scan_findings")
     op.drop_index("ix_findings_org_assignee", table_name="findings")
     op.drop_index("ix_findings_org_status_severity", table_name="findings")
     op.drop_table("findings")
