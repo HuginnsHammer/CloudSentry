@@ -12,7 +12,7 @@ from functools import lru_cache
 
 import jwt
 from jwt import PyJWKClient
-from jwt.exceptions import InvalidTokenError
+from jwt.exceptions import InvalidTokenError, PyJWKClientError
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ def verify_access_token(token: str, settings: OIDCSettings | None = None) -> dic
             issuer=config.issuer,
             options={"require": ["exp", "iat", "iss", "sub", "aud"]},
         )
-    except (InvalidTokenError, jwt.PyJWKClientError, ValueError) as exc:
+    except (InvalidTokenError, PyJWKClientError, ValueError) as exc:
         raise ValueError("Bearer token is invalid or could not be verified") from exc
 
     if not isinstance(claims.get("sub"), str) or not claims["sub"].strip():
