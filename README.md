@@ -15,6 +15,7 @@ CloudSentry is a lightweight, local-first static configuration auditor for Terra
 - Supports reasoned suppressions and preserves suppression justifications in machine-readable reports.
 - Does not apply Terraform, build images, start containers, or execute scanned files.
 - Provides an authenticated platform API for importing bounded CLI reports, tracking scan history, and managing tenant-scoped findings; imports are explicitly marked as unverified client reports. See [scan-result ingestion](docs/scan-result-ingestion.md).
+- Supports GitHub App installation binding and signed default-branch push events that enqueue durable scan jobs. Job execution is not yet enabled; see [GitHub App integration](docs/github-app-integration.md).
 
 ## Dashboard features
 
