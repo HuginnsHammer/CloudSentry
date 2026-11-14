@@ -158,6 +158,12 @@ def test_analyst_can_ingest_findings_and_platform_records_observation_and_audit(
         }
         assert scan.summary["ingestion_provenance"] == "client_supplied_report_unverified"
         assert len(findings) == len(observations) == len(events) == 1
+        assert findings[0].description == "A storage resource may be publicly accessible."
+        assert findings[0].category == "terraform"
+        assert findings[0].confidence == "high"
+        assert findings[0].impact == "Untrusted parties may access stored objects."
+        assert findings[0].reference_urls == []
+        assert scan.diagnostics == {"errors": [], "warnings": []}
         assert events[0].action == "scan.result_ingested"
 
 
@@ -356,3 +362,45 @@ def test_suppressed_findings_are_hidden_by_default_but_auditable(scan_client):
     assert audit_view.status_code == 200
     assert len(audit_view.json()) == 1
     assert audit_view.json()[0]["suppression_reason"] == "Approved exception CS-42"
+
+
+
+def test_partial_scan_diagnostics_are_preserved(scan_client):
+    client, factory, _, org_a, _, project_a, _, _, _, _ = scan_client
+    partial = report(
+        status="partial",
+        files_scanned=1,
+        errors=[{"file_path": "infra/broken.tf", "kind": "parse", "message": "Invalid HCL syntax"}],
+    )
+    response = client.post(
+        scan_endpoint(org_a, project_a),
+        json={"target": "repo", "result": partial},
+    )
+    assert response.status_code == 201
+    scan_id = response.json()["scan_id"]
+    detail = client.get(
+        f"/api/v1/organizations/{org_a}/projects/{project_a}/scans/{scan_id}"
+    )
+    assert detail.status_code == 200
+    assert detail.json()["diagnostics"]["errors"][0]["file_path"] == "infra/broken.tf"
+
+
+def test_negative_finding_line_numbers_are_rejected(scan_client):
+    client, _, _, org_a, _, project_a, _, _, _, _ = scan_client
+    item = finding_payload()
+    item["line_start"] = -1
+    response = client.post(
+        scan_endpoint(org_a, project_a),
+        json={"target": "repo", "result": report(item)},
+    )
+    assert response.status_code == 422
+
+
+def test_oversized_declared_ingestion_body_is_rejected(scan_client):
+    client, _, _, org_a, _, project_a, _, _, _, _ = scan_client
+    response = client.post(
+        scan_endpoint(org_a, project_a),
+        json={"target": "repo", "result": report()},
+        headers={"Content-Length": str(32 * 1024 * 1024 + 1)},
+    )
+    assert response.status_code == 413
