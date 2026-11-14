@@ -388,3 +388,65 @@ def test_deleted_installation_webhook_disables_existing_installation(github_clie
         installation = session.scalar(select(GitHubInstallation))
         assert installation.organization_id == organization_id
         assert installation.status == "deleted"
+
+
+def test_delivery_id_cannot_be_reused_for_a_different_signed_payload(github_client):
+    client, _, _, _, _, _ = github_client
+    delivery_id = str(uuid4())
+    first, _ = send_webhook(
+        client, "installation", installation_payload("created"), delivery_id
+    )
+    replay, _ = send_webhook(
+        client, "installation", installation_payload("deleted"), delivery_id
+    )
+    assert first.status_code == 202
+    assert replay.status_code == 409
+
+
+def test_unbind_repository_removes_project_link_and_records_audit(github_client):
+    client, factory, organization_id, project_id, _, _ = github_client
+    add_installation(factory, organization_id, status="active")
+    bind_project_record(factory, project_id, organization_id)
+    response = client.delete(
+        f"/api/v1/organizations/{organization_id}/projects/{project_id}/github/repository"
+    )
+    assert response.status_code == 204
+    with factory() as session:
+        project = session.get(Project, project_id)
+        assert project.github_installation_id is None
+        assert project.github_repository_id is None
+        assert project.repository_url is None
+        assert "github.repository_unbound" in session.scalars(select(AuditEvent.action)).all()
+
+
+def test_queued_scan_jobs_are_visible_only_inside_their_project_tenant(github_client):
+    client, factory, organization_id, project_id, _, _ = github_client
+    add_installation(factory, organization_id, status="active")
+    bind_project_record(factory, project_id, organization_id)
+    response, _ = send_webhook(client, "push", push_payload())
+    assert response.status_code == 202
+    base = f"/api/v1/organizations/{organization_id}/projects/{project_id}/scan-jobs"
+    listing = client.get(base)
+    assert listing.status_code == 200
+    assert len(listing.json()) == 1
+    job_id = listing.json()[0]["id"]
+    detail = client.get(f"{base}/{job_id}")
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "queued"
+
+    foreign = client.get(
+        f"/api/v1/organizations/{uuid4()}/projects/{project_id}/scan-jobs/{job_id}"
+    )
+    assert foreign.status_code == 404
+
+
+def test_github_app_endpoints_fail_closed_without_app_credentials(github_client, monkeypatch):
+    client, factory, organization_id, _, _, _ = github_client
+    add_installation(factory)
+    app.dependency_overrides.pop(get_github_app_client)
+    monkeypatch.delenv("CLOUDSENTRY_GITHUB_APP_ID", raising=False)
+    monkeypatch.delenv("CLOUDSENTRY_GITHUB_APP_PRIVATE_KEY", raising=False)
+    response = client.post(
+        f"/api/v1/organizations/{organization_id}/github/installations/12345/claim"
+    )
+    assert response.status_code == 503
