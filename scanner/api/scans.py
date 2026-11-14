@@ -7,11 +7,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from scanner.api.scan_schemas import ScanIngestRequest, ScanIngestResponse
+from scanner.api.scan_schemas import ScanIngestRequest, ScanIngestResponse, ScanResponse
 from scanner.platform.dependencies import get_current_user, get_db_session, require_membership
 from scanner.scoring import summarize
 from scanner.platform.models import (
@@ -218,3 +218,61 @@ def ingest_scan_result(
         errors_count=len(result.errors),
         warnings_count=len(result.warnings),
     )
+
+
+
+@router.get(
+    "/api/v1/organizations/{organization_id}/projects/{project_id}/scans",
+    response_model=list[ScanResponse],
+)
+def list_project_scans(
+    organization_id: UUID,
+    project_id: UUID,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    membership: Membership = Depends(require_membership),
+    session: Session = Depends(get_db_session),
+) -> list[Scan]:
+    if membership.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = session.scalar(
+        select(Project).where(
+            Project.id == project_id,
+            Project.organization_id == organization_id,
+        )
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    statement = (
+        select(Scan)
+        .where(Scan.organization_id == organization_id, Scan.project_id == project_id)
+        .order_by(Scan.started_at.desc(), Scan.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(session.scalars(statement).all())
+
+
+@router.get(
+    "/api/v1/organizations/{organization_id}/projects/{project_id}/scans/{scan_id}",
+    response_model=ScanResponse,
+)
+def get_project_scan(
+    organization_id: UUID,
+    project_id: UUID,
+    scan_id: UUID,
+    membership: Membership = Depends(require_membership),
+    session: Session = Depends(get_db_session),
+) -> Scan:
+    if membership.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = session.scalar(
+        select(Scan).where(
+            Scan.id == scan_id,
+            Scan.organization_id == organization_id,
+            Scan.project_id == project_id,
+        )
+    )
+    if scan is None:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    return scan
