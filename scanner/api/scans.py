@@ -104,6 +104,10 @@ def ingest_scan_result(
         target=payload.target,
         scanner_version=result.scanner_version,
         summary=summary,
+        diagnostics={
+            "errors": [item.model_dump(mode="json") for item in result.errors],
+            "warnings": [item.model_dump(mode="json") for item in result.warnings],
+        },
         started_at=now,
         completed_at=now,
     )
@@ -132,6 +136,12 @@ def ingest_scan_result(
                     fingerprint=item.fingerprint,
                     rule_id=item.rule_id,
                     title=item.title,
+                    description=item.description,
+                    category=item.category,
+                    confidence=item.confidence,
+                    resource=item.resource,
+                    impact=item.impact,
+                    reference_urls=item.references,
                     severity=item.severity.value,
                     status=FindingStatus.OPEN,
                     file_path=item.file_path,
@@ -149,6 +159,12 @@ def ingest_scan_result(
             else:
                 finding.rule_id = item.rule_id
                 finding.title = item.title
+                finding.description = item.description
+                finding.category = item.category
+                finding.confidence = item.confidence
+                finding.resource = item.resource
+                finding.impact = item.impact
+                finding.reference_urls = item.references
                 finding.severity = item.severity.value
                 finding.file_path = item.file_path
                 finding.line_start = item.line_start
