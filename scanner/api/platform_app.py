@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from scanner.api.findings import router as findings_router
+from scanner.api.github import router as github_router
 from scanner.api.resources import router as resources_router
 from scanner.api.scans import router as scans_router
 from sqlalchemy import select
@@ -19,12 +20,13 @@ from scanner.platform.models import Membership, Organization, Project, User
 
 app = FastAPI(
     title="CloudSentry Platform API",
-    version="0.3.0",
+    version="0.4.0",
     description="Authenticated tenant platform API. It imports reports but never executes scans.",
 )
 
 
 app.include_router(findings_router)
+app.include_router(github_router)
 app.include_router(resources_router)
 app.include_router(scans_router)
 

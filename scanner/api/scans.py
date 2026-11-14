@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from scanner.api.scan_schemas import ScanIngestRequest, ScanIngestResponse, ScanResponse
+from scanner.api.scan_schemas import ScanIngestRequest, ScanIngestResponse, ScanJobResponse, ScanResponse
 from scanner.platform.dependencies import get_current_user, get_db_session, require_membership
 from scanner.scoring import summarize
 from scanner.platform.models import (
@@ -25,6 +25,7 @@ from scanner.platform.models import (
     Project,
     Scan,
     ScanFinding,
+    ScanJob,
     ScanStatus,
     User,
 )
@@ -301,3 +302,61 @@ def get_project_scan(
     if scan is None:
         raise HTTPException(status_code=404, detail="Scan not found")
     return scan
+
+
+
+@router.get(
+    "/api/v1/organizations/{organization_id}/projects/{project_id}/scan-jobs",
+    response_model=list[ScanJobResponse],
+)
+def list_project_scan_jobs(
+    organization_id: UUID,
+    project_id: UUID,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+    membership: Membership = Depends(require_membership),
+    session: Session = Depends(get_db_session),
+) -> list[ScanJob]:
+    if membership.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project = session.scalar(
+        select(Project).where(
+            Project.id == project_id,
+            Project.organization_id == organization_id,
+        )
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    statement = (
+        select(ScanJob)
+        .where(ScanJob.organization_id == organization_id, ScanJob.project_id == project_id)
+        .order_by(ScanJob.created_at.desc(), ScanJob.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(session.scalars(statement).all())
+
+
+@router.get(
+    "/api/v1/organizations/{organization_id}/projects/{project_id}/scan-jobs/{job_id}",
+    response_model=ScanJobResponse,
+)
+def get_project_scan_job(
+    organization_id: UUID,
+    project_id: UUID,
+    job_id: UUID,
+    membership: Membership = Depends(require_membership),
+    session: Session = Depends(get_db_session),
+) -> ScanJob:
+    if membership.organization_id != organization_id:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    job = session.scalar(
+        select(ScanJob).where(
+            ScanJob.id == job_id,
+            ScanJob.organization_id == organization_id,
+            ScanJob.project_id == project_id,
+        )
+    )
+    if job is None:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+    return job

@@ -1,4 +1,4 @@
-# OIDC platform API — milestone 0.5
+# OIDC platform API — milestone 0.6
 
 ## Separation of trust boundaries
 
@@ -61,8 +61,12 @@ enumeration. Organization, project and environment reads are available to member
 project/environment creation is restricted to owners and admins. Scan ingestion and
 finding lifecycle updates enforce their own role policies. Project repository URLs
 are validated HTTPS GitHub metadata only; this API does not fetch or clone them.
-Invitations, membership administration, token refresh, SCIM, and automated identity
-provisioning are not implemented yet.
+GitHub App installation claiming, repository binding and signed default-branch push
+webhooks are available; push events enqueue durable scan jobs. The worker that fetches
+source and executes scans is not implemented yet. See
+[GitHub App integration](github-app-integration.md). Invitations, membership
+administration, token refresh, SCIM, and automated identity provisioning are not
+implemented yet.
 
 ## Security limitations
 

@@ -158,3 +158,20 @@ class ScanResponse(BaseModel):
     completed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ScanJobResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    environment_id: UUID | None
+    source_revision: str
+    ref: str
+    status: str
+    attempts: int
+    max_attempts: int
+    created_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
+    error_summary: str | None
+
+    model_config = ConfigDict(from_attributes=True)

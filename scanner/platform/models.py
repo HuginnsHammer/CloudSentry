@@ -6,8 +6,8 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
-    ForeignKeyConstraint, Index, JSON, String, Text, UniqueConstraint, Uuid, func,
+    BigInteger, Boolean, CheckConstraint, DateTime, Enum as SAEnum, ForeignKey,
+    ForeignKeyConstraint, Index, Integer, JSON, String, Text, UniqueConstraint, Uuid, func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -98,6 +98,12 @@ class Project(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "id", name="uq_projects_org_id"),
         UniqueConstraint("organization_id", "slug", name="uq_projects_org_slug"),
+        UniqueConstraint("github_repository_id", name="uq_projects_github_repository_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "github_installation_id"],
+            ["github_installations.organization_id", "github_installations.installation_id"],
+            name="fk_projects_github_installation_tenant",
+        ),
         Index("ix_projects_organization_id", "organization_id"),
     )
 
@@ -108,7 +114,61 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), nullable=False)
     repository_url: Mapped[str | None] = mapped_column(String(2048))
+    github_installation_id: Mapped[int | None] = mapped_column(BigInteger)
+    github_repository_id: Mapped[int | None] = mapped_column(BigInteger)
+    github_repository_full_name: Mapped[str | None] = mapped_column(String(255))
+    github_default_branch: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GitHubInstallation(Base):
+    """A GitHub App installation claimed by at most one CloudSentry organization."""
+    __tablename__ = "github_installations"
+    __table_args__ = (
+        UniqueConstraint("installation_id", name="uq_github_installations_installation_id"),
+        UniqueConstraint(
+            "organization_id", "installation_id",
+            name="uq_github_installations_org_installation",
+        ),
+        CheckConstraint(
+            "status IN ('unclaimed', 'active', 'suspended', 'deleted')",
+            name="ck_github_installations_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL")
+    )
+    installation_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    account_login: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="unclaimed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GitHubWebhookDelivery(Base):
+    """Idempotency ledger for signed GitHub webhook deliveries; payloads are not retained."""
+    __tablename__ = "github_webhook_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('processed', 'ignored')",
+            name="ck_github_webhook_deliveries_status",
+        ),
+        Index("ix_github_webhook_deliveries_received", "received_at"),
+    )
+
+    delivery_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    event: Mapped[str] = mapped_column(String(80), nullable=False)
+    action: Mapped[str | None] = mapped_column(String(80))
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Environment(Base):
@@ -159,6 +219,61 @@ class Scan(Base):
     diagnostics: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ScanJob(Base):
+    """Durable request to scan one immutable repository revision."""
+    __tablename__ = "scan_jobs"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "id", name="uq_scan_jobs_org_id"),
+        UniqueConstraint("organization_id", "dedupe_key", name="uq_scan_jobs_org_dedupe"),
+        ForeignKeyConstraint(
+            ["organization_id", "project_id"], ["projects.organization_id", "projects.id"],
+            ondelete="CASCADE", name="fk_scan_jobs_project_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "project_id", "environment_id"],
+            ["environments.organization_id", "environments.project_id", "environments.id"],
+            name="fk_scan_jobs_environment_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "requested_by_user_id"],
+            ["memberships.organization_id", "memberships.user_id"],
+            name="fk_scan_jobs_requester_membership",
+        ),
+        CheckConstraint(
+            "attempts >= 0 AND max_attempts BETWEEN 1 AND 10",
+            name="ck_scan_jobs_attempt_limits",
+        ),
+        Index("ix_scan_jobs_claim", "status", "available_at"),
+        Index("ix_scan_jobs_org_project_created", "organization_id", "project_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    environment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    source_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[ScanStatus] = mapped_column(
+        enum_type(ScanStatus, "scan_status"), nullable=False, default=ScanStatus.QUEUED
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(128))
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Finding(Base):
