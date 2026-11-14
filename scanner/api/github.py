@@ -46,7 +46,9 @@ MAX_WEBHOOK_BYTES = 1024 * 1024
 
 def get_github_app_client() -> GitHubAppClient:
     try:
-        return GitHubAppClient.from_environment()
+        client = GitHubAppClient.from_environment()
+        client._app_jwt()
+        return client
     except GitHubAppConfigurationError:
         raise HTTPException(
             status_code=503,
