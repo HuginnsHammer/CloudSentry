@@ -56,7 +56,9 @@ curl --fail-with-body \
 
 The response reports the scan ID, outcome, and counts of created, updated, and
 observed findings. The platform recomputes the aggregate risk score from the
-submitted findings rather than trusting the client-supplied score.
+submitted findings rather than trusting the client-supplied score. Finding
+context (description, category, confidence, affected resource, impact, evidence,
+remediation and references) and partial-scan diagnostics are persisted.
 
 ## Scan history
 
