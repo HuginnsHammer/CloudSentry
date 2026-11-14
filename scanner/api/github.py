@@ -360,9 +360,9 @@ def _push_webhook(payload: dict, session: Session) -> str:
     revision = payload.get("after")
     if (
         type(repository_id) is not int
-        or repository_id <= 0
+        or not 0 < repository_id <= 9223372036854775807
         or type(installation_id) is not int
-        or installation_id <= 0
+        or not 0 < installation_id <= 9223372036854775807
         or not isinstance(ref, str)
         or len(ref) > 255
         or not isinstance(revision, str)
@@ -451,9 +451,12 @@ async def github_webhook(
                 raise HTTPException(status_code=413, detail="GitHub webhook payload exceeds 1 MiB")
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid Content-Length") from None
-    raw = await request.body()
-    if len(raw) > MAX_WEBHOOK_BYTES:
-        raise HTTPException(status_code=413, detail="GitHub webhook payload exceeds 1 MiB")
+    chunks = bytearray()
+    async for chunk in request.stream():
+        chunks.extend(chunk)
+        if len(chunks) > MAX_WEBHOOK_BYTES:
+            raise HTTPException(status_code=413, detail="GitHub webhook payload exceeds 1 MiB")
+    raw = bytes(chunks)
     signature = request.headers.get("x-hub-signature-256", "")
     if not re.fullmatch(r"sha256=[0-9a-fA-F]{64}", signature):
         raise HTTPException(status_code=401, detail="GitHub webhook signature is required or malformed")
