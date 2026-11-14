@@ -24,6 +24,8 @@ from scanner.platform.models import (
 
 
 DATABASE_URL = os.getenv("CLOUDSENTRY_DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 pytestmark = pytest.mark.skipif(
     not DATABASE_URL,
     reason="CLOUDSENTRY_DATABASE_URL is required for PostgreSQL integration tests",
