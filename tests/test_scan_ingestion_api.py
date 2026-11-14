@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -147,7 +147,7 @@ def test_analyst_can_ingest_findings_and_platform_records_observation_and_audit(
     assert body["findings_observed"] == 1
 
     with factory() as session:
-        scan = session.get(Scan, body["scan_id"])
+        scan = session.get(Scan, UUID(body["scan_id"]))
         findings = session.scalars(select(Finding)).all()
         observations = session.scalars(select(ScanFinding)).all()
         events = session.scalars(select(AuditEvent)).all()
