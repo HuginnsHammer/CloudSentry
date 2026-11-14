@@ -30,6 +30,8 @@ class FindingResponse(BaseModel):
     line_end: int | None
     evidence: str
     remediation: str
+    suppressed: bool
+    suppression_reason: str | None
     assigned_to_user_id: UUID | None
     first_seen_at: datetime
     last_seen_at: datetime
