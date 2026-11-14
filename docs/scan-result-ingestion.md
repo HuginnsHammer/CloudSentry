@@ -27,9 +27,11 @@ The request contains:
 
 Finding paths must be normalized relative paths. Run the CLI from the repository
 root and pass relative targets (for example, `cloudsentry scan ./infra`) so local
-absolute paths are not uploaded. Reports have bounded finding, error, warning, and
-evidence sizes. Duplicate finding fingerprints and inconsistent scan states are
-rejected.
+absolute paths are not uploaded. Reports are limited to 32 MiB by declared
+Content-Length and have bounded finding, error, warning, evidence and reference
+sizes. Duplicate finding fingerprints, absolute/traversal paths, unjustified
+suppressions and inconsistent scan states are rejected. Reverse proxies must also
+enforce a request-body limit because chunked requests may omit Content-Length.
 
 ## Example
 
