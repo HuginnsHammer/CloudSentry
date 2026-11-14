@@ -404,3 +404,16 @@ def test_oversized_declared_ingestion_body_is_rejected(scan_client):
         headers={"Content-Length": str(32 * 1024 * 1024 + 1)},
     )
     assert response.status_code == 413
+
+
+def test_dot_prefixed_relative_paths_are_normalized(scan_client):
+    client, factory, _, org_a, _, project_a, _, _, _, _ = scan_client
+    item = finding_payload()
+    item["file_path"] = "./infra/./main.tf"
+    response = client.post(
+        scan_endpoint(org_a, project_a),
+        json={"target": "repo", "result": report(item)},
+    )
+    assert response.status_code == 201
+    with factory() as session:
+        assert session.scalar(select(Finding)).file_path == "infra/main.tf"
