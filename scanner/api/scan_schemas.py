@@ -145,6 +145,7 @@ class ScanResponse(BaseModel):
     target: str
     scanner_version: str
     summary: dict[str, object]
+    diagnostics: dict[str, object]
     started_at: datetime
     completed_at: datetime | None
 
