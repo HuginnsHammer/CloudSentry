@@ -1,7 +1,8 @@
 """Authenticated hosted API; intentionally separate from the local scanner API."""
 from uuid import UUID
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from scanner.api.findings import router as findings_router
 from scanner.api.scans import router as scans_router
@@ -18,12 +19,29 @@ from scanner.platform.models import Membership, Organization, Project, User
 app = FastAPI(
     title="CloudSentry Platform API",
     version="0.2.0",
-    description="Authenticated organization and project API. Scanning is not exposed here.",
+    description="Authenticated tenant platform API. It imports reports but never executes scans.",
 )
 
 
 app.include_router(findings_router)
 app.include_router(scans_router)
+
+
+@app.middleware("http")
+async def limit_scan_ingest_content_length(request: Request, call_next):
+    """Reject oversized declared report bodies before JSON parsing."""
+    if request.method == "POST" and request.url.path.endswith("/scans/ingest"):
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                declared_size = int(content_length)
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+            if declared_size < 0:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+            if declared_size > 32 * 1024 * 1024:
+                return JSONResponse(status_code=413, content={"detail": "Scan report exceeds the 32 MiB limit"})
+    return await call_next(request)
 
 
 @app.get("/health")
