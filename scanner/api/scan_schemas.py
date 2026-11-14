@@ -1,6 +1,6 @@
 """Validated payloads for importing a completed local CloudSentry scan."""
-from pathlib import PurePosixPath, PureWindowsPath
 from datetime import datetime
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Literal
 from uuid import UUID
 
@@ -44,8 +44,8 @@ class ScanIngestRequest(BaseModel):
             raise ValueError("result.status must be ok, partial, or error")
         if result.files_scanned < 0:
             raise ValueError("files_scanned cannot be negative")
-        if result.status == "ok" and result.errors:
-            raise ValueError("a complete scan cannot contain scan errors")
+        if result.status == "ok" and (result.errors or result.files_scanned == 0):
+            raise ValueError("a complete scan must inspect at least one file and contain no scan errors")
         if result.status == "partial" and (not result.errors or result.files_scanned == 0):
             raise ValueError("a partial scan must include errors and at least one inspected file")
         if result.status == "error" and (result.files_scanned != 0 or result.findings or not result.errors):
@@ -82,6 +82,8 @@ class ScanIngestRequest(BaseModel):
                 raise ValueError("finding references exceed the platform limits")
             if (finding.suppression_reason is not None and len(finding.suppression_reason) > 2000):
                 raise ValueError("suppression reason exceeds 2000 characters")
+            if finding.suppressed and not (finding.suppression_reason or "").strip():
+                raise ValueError("suppressed findings must include their justification")
             if len(finding.evidence) > 4096 or len(finding.remediation) > 4096:
                 raise ValueError("finding evidence or remediation exceeds 4096 characters")
             path = finding.file_path
