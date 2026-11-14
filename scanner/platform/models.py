@@ -200,6 +200,8 @@ class Finding(Base):
     line_end: Mapped[int | None] = mapped_column()
     evidence: Mapped[str] = mapped_column(Text, nullable=False)
     remediation: Mapped[str] = mapped_column(Text, nullable=False)
+    suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suppression_reason: Mapped[str | None] = mapped_column(String(2000))
     assigned_to_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
