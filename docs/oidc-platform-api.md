@@ -1,4 +1,4 @@
-# OIDC platform API — milestone 0.4
+# OIDC platform API — milestone 0.5
 
 ## Separation of trust boundaries
 
@@ -40,8 +40,15 @@ appropriate organization membership through a trusted provisioning process.
 - `GET /health`: process health only; contains no tenant data.
 - `GET /api/v1/me`: authenticated identity and its memberships.
 - `GET /api/v1/organizations`: organizations where the caller is a member.
+- `POST /api/v1/organizations`: create an organization; the creator becomes its owner.
+- `GET /api/v1/organizations/{organization_id}`: organization details for a member.
 - `GET /api/v1/organizations/{organization_id}/projects`: projects in an
   organization only when the caller has a membership there.
+- `POST /api/v1/organizations/{organization_id}/projects`: create a project (owner/admin).
+- `GET /api/v1/organizations/{organization_id}/projects/{project_id}`: project details.
+- `GET /api/v1/organizations/{organization_id}/projects/{project_id}/environments`:
+  list project environments.
+- `POST .../projects/{project_id}/environments`: create an environment (owner/admin).
 - `POST /api/v1/organizations/{organization_id}/projects/{project_id}/scans/ingest`:
   import a bounded CLI report (owner, admin, security analyst only).
 - `GET /api/v1/organizations/{organization_id}/projects/{project_id}/scans` and
@@ -50,9 +57,12 @@ appropriate organization membership through a trusted provisioning process.
   findings require `include_suppressed=true`.
 
 Unknown and unauthorized organization IDs both return 404 to reduce tenant
-enumeration. Organization/project reads and scan history are available to members;
-scan ingestion and finding lifecycle updates enforce role policy. Invitations, token
-refresh, SCIM, and administrative provisioning are not implemented yet.
+enumeration. Organization, project and environment reads are available to members;
+project/environment creation is restricted to owners and admins. Scan ingestion and
+finding lifecycle updates enforce their own role policies. Project repository URLs
+are validated HTTPS GitHub metadata only; this API does not fetch or clone them.
+Invitations, membership administration, token refresh, SCIM, and automated identity
+provisioning are not implemented yet.
 
 ## Security limitations
 
