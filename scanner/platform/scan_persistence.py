@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from scanner.api.scan_schemas import ScanIngestResponse
+from scanner.api.scan_schemas import ScanIngestRequest, ScanIngestResponse
 from scanner.models import ScanResult
 from scanner.platform.models import (
     AuditEvent,
@@ -70,16 +70,31 @@ def persist_scan_report(
     }
     if result.status not in status_map:
         raise ScanPersistenceError("invalid_scan_status")
-    if not target or len(target) > 2048:
-        raise ScanPersistenceError("invalid_scan_target")
-    if source_revision is not None and len(source_revision) > 64:
-        raise ScanPersistenceError("invalid_source_revision")
-    if not result.scanner_version or len(result.scanner_version) > 40:
-        raise ScanPersistenceError("invalid_scanner_version")
+    try:
+        validated = ScanIngestRequest.model_validate(
+            {
+                "target": target,
+                "environment_id": environment_id,
+                "source_revision": source_revision,
+                "result": result.model_dump(mode="json"),
+            }
+        )
+    except ValueError as exc:
+        raise ScanPersistenceError("invalid_scan_report") from exc
+    target = validated.target
+    environment_id = validated.environment_id
+    source_revision = validated.source_revision
+    result = validated.result
 
     now = completed_at or datetime.now(timezone.utc)
     started = started_at or now
-    if now.tzinfo is None or started.tzinfo is None or now < started:
+    if (
+        now.tzinfo is None
+        or now.utcoffset() is None
+        or started.tzinfo is None
+        or started.utcoffset() is None
+        or now < started
+    ):
         raise ScanPersistenceError("invalid_scan_timestamps")
 
     findings = result.findings
