@@ -12,12 +12,14 @@ from scanner.platform.models import (
     AuditEvent,
     Environment,
     Finding,
+    GitHubInstallation,
     Membership,
     MembershipRole,
     Organization,
     Project,
     Scan,
     ScanFinding,
+    ScanJob,
     ScanStatus,
     User,
 )
@@ -83,7 +85,25 @@ def test_postgres_rejects_cross_tenant_relationships():
                 severity="high", file_path="infra/main.tf", evidence="test evidence",
                 remediation="test remediation",
             )
-            session.add_all([scan_a, finding_b])
+            installation_a = GitHubInstallation(
+                id=uuid4(), organization_id=organization_a.id,
+                installation_id=uuid4().int % 9000000000 + 1,
+                account_id=uuid4().int % 9000000000 + 1,
+                account_login="tenant-a-app", account_type="Organization", status="active",
+            )
+            session.add(installation_a)
+            session.flush()
+            project_a.github_installation_id = installation_a.installation_id
+            project_a.github_repository_id = uuid4().int % 9000000000 + 1
+            project_a.github_repository_full_name = "tenant-a/repository"
+            project_a.github_default_branch = "main"
+            valid_job = ScanJob(
+                id=uuid4(), organization_id=organization_a.id, project_id=project_a.id,
+                source_revision="a" * 40, ref="refs/heads/main",
+                dedupe_key=uuid4().hex + uuid4().hex, status=ScanStatus.QUEUED,
+                attempts=0, max_attempts=3,
+            )
+            session.add_all([scan_a, finding_b, valid_job])
             session.commit()
 
         def must_reject(record):
@@ -122,8 +142,25 @@ def test_postgres_rejects_cross_tenant_relationships():
             id=uuid4(), organization_id=organization_a.id,
             scan_id=scan_a.id, finding_id=finding_b.id,
         ))
+        must_reject(ScanJob(
+            id=uuid4(), organization_id=organization_a.id, project_id=project_b.id,
+            source_revision="b" * 40, ref="refs/heads/main",
+            dedupe_key=uuid4().hex + uuid4().hex, status=ScanStatus.QUEUED,
+            attempts=0, max_attempts=3,
+        ))
+        with Session(engine) as session:
+            cross_tenant_project = session.get(Project, project_b.id)
+            cross_tenant_project.github_installation_id = installation_a.installation_id
+            with pytest.raises(IntegrityError):
+                session.flush()
+            session.rollback()
     finally:
         with Session(engine, expire_on_commit=False) as session:
+            session.execute(
+                GitHubInstallation.__table__.delete().where(
+                    GitHubInstallation.installation_id == installation_a.installation_id
+                )
+            )
             session.execute(
                 Organization.__table__.delete().where(
                     Organization.id.in_([organization_a.id, organization_b.id])
