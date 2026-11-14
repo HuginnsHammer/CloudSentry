@@ -227,6 +227,11 @@ class ScanJob(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "id", name="uq_scan_jobs_org_id"),
         UniqueConstraint("organization_id", "dedupe_key", name="uq_scan_jobs_org_dedupe"),
+        UniqueConstraint("scan_id", name="uq_scan_jobs_scan_id"),
+        ForeignKeyConstraint(
+            ["organization_id", "scan_id"], ["scans.organization_id", "scans.id"],
+            name="fk_scan_jobs_scan_tenant",
+        ),
         ForeignKeyConstraint(
             ["organization_id", "project_id"], ["projects.organization_id", "projects.id"],
             ondelete="CASCADE", name="fk_scan_jobs_project_tenant",
@@ -253,6 +258,7 @@ class ScanJob(Base):
     organization_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     project_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     environment_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
+    scan_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True))
     source_revision: Mapped[str] = mapped_column(String(64), nullable=False)
     ref: Mapped[str] = mapped_column(String(255), nullable=False)
