@@ -200,7 +200,7 @@ def test_postgres_rejects_cross_tenant_relationships():
 def test_postgres_workers_skip_locked_jobs_without_double_claiming():
     """A locked first job is skipped so a second worker can claim another job."""
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    organization = Organization(name="Queue tenant", slug=f"queue-{uuid4().hex}")
+    organization = Organization(id=uuid4(), name="Queue tenant", slug=f"queue-{uuid4().hex}")
     project = Project(
         id=uuid4(), organization_id=organization.id,
         name="Queue project", slug=f"queue-{uuid4().hex}",
