@@ -182,6 +182,7 @@ def fail_job(
     error_summary: str,
     *,
     retry_delay_seconds: int | None = None,
+    retryable: bool = True,
     now: datetime | None = None,
 ) -> bool:
     """Release a worker-owned job for bounded retry, or fail it permanently.
@@ -193,6 +194,8 @@ def fail_job(
     _validate_job_id(job_id)
     instant = now or _utcnow()
     _validate_time(instant)
+    if type(retryable) is not bool:
+        raise ValueError("retryable must be a boolean")
     if not isinstance(error_summary, str) or not error_summary.strip():
         raise ValueError("error_summary must be non-empty")
     if retry_delay_seconds is not None and (
@@ -214,7 +217,7 @@ def fail_job(
     if job is None:
         return False
 
-    if job.attempts >= job.max_attempts:
+    if not retryable or job.attempts >= job.max_attempts:
         job.status = ScanStatus.FAILED
         job.finished_at = instant
     else:
