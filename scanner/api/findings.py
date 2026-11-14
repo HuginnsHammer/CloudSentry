@@ -41,17 +41,6 @@ def _require_project(organization_id: UUID, project_id: UUID, session: Session) 
         raise HTTPException(status_code=404, detail="Project not found")
 
 
-def _require_project(organization_id: UUID, project_id: UUID, session: Session) -> None:
-    project = session.scalar(
-        select(Project).where(
-            Project.id == project_id,
-            Project.organization_id == organization_id,
-        )
-    )
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-
 def _get_project_finding(
     organization_id: UUID,
     project_id: UUID,
@@ -82,6 +71,7 @@ def list_project_findings(
     finding_status: FindingStatus | None = Query(default=None, alias="status"),
     severity: str | None = Query(default=None, pattern="^(critical|high|medium|low|info)$"),
     assigned_to_me: bool = False,
+    include_suppressed: bool = False,
 ) -> list[Finding]:
     if membership.organization_id != organization_id:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -96,6 +86,8 @@ def list_project_findings(
         statement = statement.where(Finding.severity == severity)
     if assigned_to_me:
         statement = statement.where(Finding.assigned_to_user_id == membership.user_id)
+    if not include_suppressed:
+        statement = statement.where(Finding.suppressed.is_(False))
     return list(session.scalars(statement.order_by(Finding.first_seen_at.desc())).all())
 
 
