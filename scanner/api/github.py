@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -296,9 +296,14 @@ def _installation_webhook(
         not isinstance(installation_id, int)
         or installation_id <= 0
         or not isinstance(account, dict)
-        or not isinstance(account.get("id"), int)
+        or type(account.get("id")) is not int
+        or account.get("id") <= 0
         or not isinstance(account.get("login"), str)
+        or not account.get("login")
+        or len(account.get("login")) > 255
         or not isinstance(account.get("type"), str)
+        or not account.get("type")
+        or len(account.get("type")) > 40
     ):
         raise HTTPException(status_code=400, detail="Installation webhook contains invalid account metadata")
     if action not in {"created", "deleted", "suspend", "unsuspend"}:
@@ -354,9 +359,9 @@ def _push_webhook(payload: dict, session: Session) -> str:
     ref = payload.get("ref")
     revision = payload.get("after")
     if (
-        not isinstance(repository_id, int)
+        type(repository_id) is not int
         or repository_id <= 0
-        or not isinstance(installation_id, int)
+        or type(installation_id) is not int
         or installation_id <= 0
         or not isinstance(ref, str)
         or len(ref) > 255
