@@ -1,4 +1,4 @@
-"""Persist scanner suppression metadata on platform findings.
+"""Persist complete scan diagnostics and finding evidence metadata.
 
 Revision ID: 0002_finding_suppression
 Revises: 0001_enterprise_platform
