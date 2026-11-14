@@ -119,3 +119,7 @@ def rules() -> None:
         ("CS-TF-003", "EBS encryption explicitly disabled"),
     ]:
         console.print(f"{rule:14} {description}")
+
+
+if __name__ == "__main__":
+    app()
