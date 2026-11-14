@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import socket
+import signal
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -107,7 +108,7 @@ def _load_job_context(
             repository_full_name=project.github_repository_full_name,
             revision=job.source_revision,
             ref=job.ref,
-            started_at=job.started_at or job.created_at,
+            started_at=job.updated_at or job.started_at or job.created_at,
         )
 
 
@@ -148,21 +149,24 @@ def process_claimed_job(
         if not complete_job(session, job_id, worker_id, now=completed_at):
             session.rollback()
             return False
-        persisted = persist_scan_report(
-            session,
-            organization_id=context.organization_id,
-            project_id=context.project_id,
-            environment_id=context.environment_id,
-            result=validated.result,
-            target=context.repository_full_name,
-            source_revision=context.revision,
-            actor_user_id=None,
-            provenance="server_managed_worker",
-            timestamp_semantics="worker_execution_window",
-            started_at=context.started_at,
-            completed_at=completed_at,
-            audit_action="scan.result_worker_ingested",
-        )
+        try:
+            persisted = persist_scan_report(
+                session,
+                organization_id=context.organization_id,
+                project_id=context.project_id,
+                environment_id=context.environment_id,
+                result=validated.result,
+                target=context.repository_full_name,
+                source_revision=context.revision,
+                actor_user_id=None,
+                provenance="server_managed_worker",
+                timestamp_semantics="worker_execution_window",
+                started_at=context.started_at,
+                completed_at=completed_at,
+                audit_action="scan.result_worker_ingested",
+            )
+        except ScanPersistenceError as exc:
+            raise PermanentJobError("Persisted scan report violated platform constraints") from exc
         job = session.get(ScanJob, job_id)
         if job is None:
             raise RuntimeError("Claimed scan job disappeared during result persistence")
@@ -259,6 +263,10 @@ def main() -> None:
     worker_id = _worker_id()
     logger.info("worker %s started", worker_id)
 
+    def _stop_worker(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _stop_worker)
     try:
         while True:
             claimed = run_once(
