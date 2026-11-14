@@ -8,6 +8,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from scanner.platform.worker import claim_next_job
+
 from scanner.platform.models import (
     AuditEvent,
     Environment,
@@ -191,4 +193,74 @@ def test_postgres_rejects_cross_tenant_relationships():
                 User.__table__.delete().where(User.id.in_([user_a.id, user_b.id]))
             )
             session.commit()
+        engine.dispose()
+
+
+
+def test_postgres_workers_skip_locked_jobs_without_double_claiming():
+    """A locked first job is skipped so a second worker can claim another job."""
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    organization = Organization(name="Queue tenant", slug=f"queue-{uuid4().hex}")
+    project = Project(
+        id=uuid4(), organization_id=organization.id,
+        name="Queue project", slug=f"queue-{uuid4().hex}",
+    )
+    now = datetime.now(timezone.utc)
+    try:
+        with Session(engine) as setup:
+            setup.add(organization)
+            setup.flush()
+            setup.add(project)
+            setup.flush()
+            jobs = [
+                ScanJob(
+                    organization_id=organization.id,
+                    project_id=project.id,
+                    source_revision=f"{index:040x}",
+                    ref="refs/heads/main",
+                    dedupe_key=uuid4().hex + uuid4().hex,
+                    status=ScanStatus.QUEUED,
+                    attempts=0,
+                    max_attempts=3,
+                    available_at=now,
+                )
+                for index in range(2)
+            ]
+            setup.add_all(jobs)
+            setup.commit()
+
+        first_session = Session(engine)
+        second_session = Session(engine)
+        try:
+            first_claim = claim_next_job(first_session, "postgres-worker-a", now=now)
+            assert first_claim is not None
+
+            # The first transaction deliberately remains open and holds the
+            # selected row lock. PostgreSQL SKIP LOCKED must return the other job.
+            second_claim = claim_next_job(second_session, "postgres-worker-b", now=now)
+            assert second_claim is not None
+            assert second_claim.id != first_claim.id
+            assert first_claim.lease_owner == "postgres-worker-a"
+            assert second_claim.lease_owner == "postgres-worker-b"
+            first_session.commit()
+            second_session.commit()
+        finally:
+            first_session.close()
+            second_session.close()
+
+        with Session(engine) as verify:
+            claimed = verify.query(ScanJob).filter(
+                ScanJob.organization_id == organization.id,
+                ScanJob.status == ScanStatus.RUNNING,
+            ).all()
+            assert len(claimed) == 2
+            assert {job.lease_owner for job in claimed} == {
+                "postgres-worker-a", "postgres-worker-b",
+            }
+    finally:
+        with Session(engine) as cleanup:
+            cleanup.execute(
+                Organization.__table__.delete().where(Organization.id == organization.id)
+            )
+            cleanup.commit()
         engine.dispose()
