@@ -48,8 +48,8 @@ class ScanIngestRequest(BaseModel):
             raise ValueError("a complete scan cannot contain scan errors")
         if result.status == "partial" and (not result.errors or result.files_scanned == 0):
             raise ValueError("a partial scan must include errors and at least one inspected file")
-        if result.status == "error" and (result.files_scanned != 0 or result.findings):
-            raise ValueError("an error scan cannot claim inspected files or findings")
+        if result.status == "error" and (result.files_scanned != 0 or result.findings or not result.errors):
+            raise ValueError("an error scan must contain errors and no inspected files or findings")
         if any(key not in {"critical", "high", "medium", "low", "info"} or value < 0
                for key, value in result.severity_counts.items()):
             raise ValueError("severity_counts contains an invalid severity or negative count")
@@ -57,7 +57,7 @@ class ScanIngestRequest(BaseModel):
             raise ValueError("scanner_version exceeds 40 characters")
         if not 0 <= result.risk_score <= 100:
             raise ValueError("risk_score must be between 0 and 100")
-        if len(result.findings) > 5000 or len(result.errors) > 500 or len(result.warnings) > 500:
+        if len(result.findings) > 1000 or len(result.errors) > 100 or len(result.warnings) > 100:
             raise ValueError("scan result exceeds the platform ingestion limits")
         fingerprints = [finding.fingerprint for finding in result.findings]
         if len(fingerprints) != len(set(fingerprints)):
@@ -67,10 +67,14 @@ class ScanIngestRequest(BaseModel):
                 raise ValueError("finding fingerprint or rule ID exceeds the platform limit")
             if len(finding.title) > 300 or len(finding.file_path) > 2048:
                 raise ValueError("finding title or file path exceeds the platform limit")
+            if len(finding.description) > 2000 or len(finding.impact) > 2000:
+                raise ValueError("finding description or impact exceeds 2000 characters")
+            if len(finding.references) > 10 or any(len(ref) > 512 for ref in finding.references):
+                raise ValueError("finding references exceed the platform limits")
             if (finding.suppression_reason is not None and len(finding.suppression_reason) > 2000):
                 raise ValueError("suppression reason exceeds 2000 characters")
-            if len(finding.evidence) > 16384 or len(finding.remediation) > 8192:
-                raise ValueError("finding evidence or remediation exceeds the platform limit")
+            if len(finding.evidence) > 4096 or len(finding.remediation) > 4096:
+                raise ValueError("finding evidence or remediation exceeds 4096 characters")
             path = finding.file_path
             if not path or "\\" in path or any(ord(char) < 32 or ord(char) == 127 for char in path):
                 raise ValueError("finding file paths must be normalized relative paths")
