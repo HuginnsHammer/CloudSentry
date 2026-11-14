@@ -476,7 +476,11 @@ async def github_webhook(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="GitHub webhook body must be a JSON object")
 
-    if session.get(GitHubWebhookDelivery, delivery_id) is not None:
+    existing_delivery = session.get(GitHubWebhookDelivery, delivery_id)
+    payload_digest = hashlib.sha256(raw).hexdigest()
+    if existing_delivery is not None:
+        if not hmac.compare_digest(existing_delivery.payload_sha256, payload_digest):
+            raise HTTPException(status_code=409, detail="GitHub delivery ID was reused with a different payload")
         return {"accepted": True, "duplicate": True, "result": "already_processed"}
     action = payload.get("action") if isinstance(payload.get("action"), str) else None
     if action is not None and len(action) > 80:
@@ -485,7 +489,7 @@ async def github_webhook(
         delivery_id=delivery_id,
         event=event,
         action=action,
-        payload_sha256=hashlib.sha256(raw).hexdigest(),
+        payload_sha256=payload_digest,
         status="ignored",
     )
     session.add(delivery)
@@ -493,6 +497,11 @@ async def github_webhook(
         session.flush()
     except IntegrityError:
         session.rollback()
+        existing_delivery = session.get(GitHubWebhookDelivery, delivery_id)
+        if existing_delivery is None or not hmac.compare_digest(
+            existing_delivery.payload_sha256, payload_digest
+        ):
+            raise
         return {"accepted": True, "duplicate": True, "result": "already_processed"}
 
     result = "ignored"
