@@ -6,9 +6,10 @@ persist it against an organization, project, and optional environment.
 This is **report ingestion, not remote scanning**. The hosted API does not clone a
 repository, read a server filesystem path, execute configuration, or verify that a
 client actually ran the reported scanner. Imported results are marked
-`client_supplied_report_unverified`. Do not treat this provenance as equivalent to
-a server-attested scan. A managed, isolated worker pipeline and signed provenance
-are separate future milestones.
+`client_supplied_report_unverified`. The scan timestamps currently represent platform
+ingestion time only, not a verified scanner start/end time. Do not treat this provenance
+as equivalent to a server-attested scan. A managed, isolated worker pipeline and signed
+provenance are separate future milestones.
 
 ## Permissions and endpoint
 
