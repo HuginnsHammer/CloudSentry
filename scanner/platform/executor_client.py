@@ -85,6 +85,12 @@ class ScanExecutorClient:
             raise ExecutorError("Isolated scanner result exceeded the 20 MiB limit")
         try:
             body = json.loads(raw)
+            if (
+                not isinstance(body, dict)
+                or body.get("source_revision") != revision.lower()
+                or body.get("target") != target
+            ):
+                raise ExecutorError("Isolated scanner response did not match the requested source")
             result = body["result"]
             return ScanResult.model_validate(result)
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
