@@ -164,6 +164,7 @@ class ScanJobResponse(BaseModel):
     id: UUID
     project_id: UUID
     environment_id: UUID | None
+    scan_id: UUID | None
     source_revision: str
     ref: str
     status: str
