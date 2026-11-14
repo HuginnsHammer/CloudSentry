@@ -53,6 +53,7 @@ def test_postgres_rejects_cross_tenant_relationships():
         id=uuid4(), organization_id=organization_b.id, name="Project B", slug=f"b-{uuid4().hex}",
     )
     now = datetime.now(timezone.utc)
+    installation_id = uuid4().int % 9000000000 + 1
 
     try:
         with Session(engine, expire_on_commit=False) as session:
@@ -87,7 +88,7 @@ def test_postgres_rejects_cross_tenant_relationships():
             )
             installation_a = GitHubInstallation(
                 id=uuid4(), organization_id=organization_a.id,
-                installation_id=uuid4().int % 9000000000 + 1,
+                installation_id=installation_id,
                 account_id=uuid4().int % 9000000000 + 1,
                 account_login="tenant-a-app", account_type="Organization", status="active",
             )
@@ -150,20 +151,20 @@ def test_postgres_rejects_cross_tenant_relationships():
         ))
         with Session(engine) as session:
             cross_tenant_project = session.get(Project, project_b.id)
-            cross_tenant_project.github_installation_id = installation_a.installation_id
+            cross_tenant_project.github_installation_id = installation_id
             with pytest.raises(IntegrityError):
                 session.flush()
             session.rollback()
     finally:
         with Session(engine, expire_on_commit=False) as session:
             session.execute(
-                GitHubInstallation.__table__.delete().where(
-                    GitHubInstallation.installation_id == installation_a.installation_id
+                Organization.__table__.delete().where(
+                    Organization.id.in_([organization_a.id, organization_b.id])
                 )
             )
             session.execute(
-                Organization.__table__.delete().where(
-                    Organization.id.in_([organization_a.id, organization_b.id])
+                GitHubInstallation.__table__.delete().where(
+                    GitHubInstallation.installation_id == installation_id
                 )
             )
             session.execute(
