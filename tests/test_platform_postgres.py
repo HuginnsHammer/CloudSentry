@@ -1,5 +1,5 @@
 """PostgreSQL integration checks for database-enforced tenant boundaries."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
 
@@ -23,6 +23,7 @@ from scanner.platform.models import (
     ScanStatus,
     User,
 )
+from scanner.platform.worker import claim_next_job
 
 
 DATABASE_URL = os.getenv("CLOUDSENTRY_DATABASE_URL")
@@ -104,8 +105,27 @@ def test_postgres_rejects_cross_tenant_relationships():
                 dedupe_key=uuid4().hex + uuid4().hex, status=ScanStatus.QUEUED,
                 attempts=0, max_attempts=3,
             )
-            session.add_all([scan_a, finding_b, valid_job])
+            second_job = ScanJob(
+                id=uuid4(), organization_id=organization_a.id, project_id=project_a.id,
+                source_revision="b" * 40, ref="refs/heads/main",
+                dedupe_key=uuid4().hex + uuid4().hex, status=ScanStatus.QUEUED,
+                attempts=0, max_attempts=3, available_at=now,
+            )
+            session.add_all([scan_a, finding_b, valid_job, second_job])
             session.commit()
+
+        # Hold worker A's row lock while worker B claims. PostgreSQL SKIP LOCKED
+        # must hand B a different job rather than blocking or double-claiming.
+        claim_time = now + timedelta(seconds=10)
+        with Session(engine, expire_on_commit=False) as worker_a:
+            first_claim = claim_next_job(worker_a, "pg-worker-a", now=claim_time)
+            assert first_claim is not None
+            with Session(engine, expire_on_commit=False) as worker_b:
+                second_claim = claim_next_job(worker_b, "pg-worker-b", now=claim_time)
+                assert second_claim is not None
+                assert first_claim.id != second_claim.id
+                worker_b.commit()
+            worker_a.commit()
 
         def must_reject(record):
             with Session(engine) as session:
