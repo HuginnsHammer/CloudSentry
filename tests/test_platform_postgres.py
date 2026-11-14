@@ -53,7 +53,7 @@ def test_postgres_rejects_cross_tenant_relationships():
     now = datetime.now(timezone.utc)
 
     try:
-        with Session(engine) as session:
+        with Session(engine, expire_on_commit=False) as session:
             session.add_all([organization_a, organization_b, user_a, user_b])
             session.flush()
             session.add_all([
@@ -123,7 +123,7 @@ def test_postgres_rejects_cross_tenant_relationships():
             scan_id=scan_a.id, finding_id=finding_b.id,
         ))
     finally:
-        with Session(engine) as session:
+        with Session(engine, expire_on_commit=False) as session:
             session.execute(
                 Organization.__table__.delete().where(
                     Organization.id.in_([organization_a.id, organization_b.id])
