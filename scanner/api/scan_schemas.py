@@ -1,5 +1,6 @@
 """Validated payloads for importing a completed local CloudSentry scan."""
 from pathlib import PurePosixPath, PureWindowsPath
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -99,3 +100,17 @@ class ScanIngestResponse(BaseModel):
     suppressed_observed: int
     errors_count: int
     warnings_count: int
+
+
+class ScanResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    environment_id: UUID | None
+    status: str
+    target: str
+    scanner_version: str
+    summary: dict[str, object]
+    started_at: datetime
+    completed_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)
