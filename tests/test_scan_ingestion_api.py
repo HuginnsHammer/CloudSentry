@@ -157,6 +157,7 @@ def test_analyst_can_ingest_findings_and_platform_records_observation_and_audit(
             "critical": 0, "high": 1, "medium": 0, "low": 0, "info": 0,
         }
         assert scan.summary["ingestion_provenance"] == "client_supplied_report_unverified"
+        assert scan.summary["timestamp_semantics"] == "platform_ingestion_time_only"
         assert len(findings) == len(observations) == len(events) == 1
         assert findings[0].description == "A storage resource may be publicly accessible."
         assert findings[0].category == "terraform"

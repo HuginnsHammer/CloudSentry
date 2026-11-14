@@ -1,4 +1,4 @@
-"""Validated payloads for importing a completed local CloudSentry scan."""
+"""Validated payloads for importing a bounded CloudSentry scanner report."""
 from datetime import datetime
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Literal
@@ -10,7 +10,7 @@ from scanner.models import ScanResult
 
 
 class ScanIngestRequest(BaseModel):
-    """A completed scanner result; this endpoint never executes submitted paths."""
+    """A bounded scanner report; this endpoint never executes submitted paths."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -42,8 +42,8 @@ class ScanIngestRequest(BaseModel):
         result = self.result
         if result.status not in {"ok", "partial", "error"}:
             raise ValueError("result.status must be ok, partial, or error")
-        if result.files_scanned < 0:
-            raise ValueError("files_scanned cannot be negative")
+        if not 0 <= result.files_scanned <= 100000:
+            raise ValueError("files_scanned must be between 0 and 100000")
         if result.status == "ok" and (result.errors or result.files_scanned == 0):
             raise ValueError("a complete scan must inspect at least one file and contain no scan errors")
         if result.status == "partial" and (not result.errors or result.files_scanned == 0):
@@ -92,7 +92,7 @@ class ScanIngestRequest(BaseModel):
             normalized = PurePosixPath(path)
             if (
                 normalized.is_absolute()
-                or PureWindowsPath(path).is_absolute()
+                or PureWindowsPath(path).drive
                 or not normalized.parts
                 or any(part == ".." for part in normalized.parts)
             ):
@@ -118,12 +118,18 @@ class ScanIngestRequest(BaseModel):
             normalized = PurePosixPath(path)
             if (
                 normalized.is_absolute()
-                or PureWindowsPath(path).is_absolute()
+                or PureWindowsPath(path).drive
                 or any(part == ".." for part in path.split("/"))
             ):
                 raise ValueError("diagnostic paths must not be absolute or traverse directories")
+            kind = getattr(diagnostic, "kind", None)
+            if kind is not None and (not kind or len(kind) > 80):
+                raise ValueError("diagnostic kind must be non-empty and at most 80 characters")
             if len(diagnostic.message) > 2048:
                 raise ValueError("diagnostic message exceeds 2048 characters")
+            line_start = getattr(diagnostic, "line_start", None)
+            if line_start is not None and line_start < 1:
+                raise ValueError("diagnostic line_start must be positive")
         return self
 
 

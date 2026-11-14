@@ -96,6 +96,7 @@ def ingest_scan_result(
         "severity_counts": verified_severity_counts,
         "source_revision": payload.source_revision,
         "ingestion_provenance": "client_supplied_report_unverified",
+        "timestamp_semantics": "platform_ingestion_time_only",
     }
     scan = Scan(
         organization_id=organization_id,
