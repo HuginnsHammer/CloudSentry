@@ -23,6 +23,12 @@ class FindingResponse(BaseModel):
     fingerprint: str
     rule_id: str
     title: str
+    description: str
+    category: str
+    confidence: str
+    resource: str | None
+    impact: str
+    reference_urls: list[str]
     severity: str
     status: FindingStatus
     file_path: str
