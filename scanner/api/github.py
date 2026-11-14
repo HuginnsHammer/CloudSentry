@@ -293,7 +293,7 @@ def _installation_webhook(
     installation_id = data.get("id")
     account = data.get("account")
     if (
-        not isinstance(installation_id, int)
+        type(installation_id) is not int
         or installation_id <= 0
         or not isinstance(account, dict)
         or type(account.get("id")) is not int
@@ -442,8 +442,8 @@ async def github_webhook(
     session: Session = Depends(get_db_session),
 ) -> dict[str, object]:
     secret = os.getenv("CLOUDSENTRY_GITHUB_WEBHOOK_SECRET")
-    if not secret:
-        raise HTTPException(status_code=503, detail="GitHub webhook verification is not configured")
+    if not secret or len(secret) < 32:
+        raise HTTPException(status_code=503, detail="GitHub webhook verification requires a 32-character secret")
     declared_length = request.headers.get("content-length")
     if declared_length is not None:
         try:
@@ -455,16 +455,20 @@ async def github_webhook(
     if len(raw) > MAX_WEBHOOK_BYTES:
         raise HTTPException(status_code=413, detail="GitHub webhook payload exceeds 1 MiB")
     signature = request.headers.get("x-hub-signature-256", "")
-    if not signature.startswith("sha256="):
-        raise HTTPException(status_code=401, detail="GitHub webhook signature is required")
+    if not re.fullmatch(r"sha256=[0-9a-fA-F]{64}", signature):
+        raise HTTPException(status_code=401, detail="GitHub webhook signature is required or malformed")
     expected = hmac.new(secret.encode("utf-8"), raw, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature[7:], expected):
         raise HTTPException(status_code=401, detail="GitHub webhook signature is invalid")
 
     event = request.headers.get("x-github-event", "")
     delivery_id = request.headers.get("x-github-delivery", "")
-    if not event or len(event) > 80 or not delivery_id or len(delivery_id) > 128:
+    if not re.fullmatch(r"[a-z_]{1,80}", event) or len(delivery_id) != 36:
         raise HTTPException(status_code=400, detail="GitHub webhook headers are invalid")
+    try:
+        UUID(delivery_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="GitHub delivery ID must be a UUID") from None
     try:
         payload = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -475,6 +479,8 @@ async def github_webhook(
     if session.get(GitHubWebhookDelivery, delivery_id) is not None:
         return {"accepted": True, "duplicate": True, "result": "already_processed"}
     action = payload.get("action") if isinstance(payload.get("action"), str) else None
+    if action is not None and len(action) > 80:
+        raise HTTPException(status_code=400, detail="GitHub webhook action is invalid")
     delivery = GitHubWebhookDelivery(
         delivery_id=delivery_id,
         event=event,
