@@ -109,7 +109,7 @@ class ScanIngestRequest(BaseModel):
             if (
                 not path
                 or len(path) > 2048
-                or "\\\\" in path
+                or "\\" in path
                 or any(ord(char) < 32 or ord(char) == 127 for char in path)
             ):
                 raise ValueError("diagnostic paths must be normalized relative paths")
