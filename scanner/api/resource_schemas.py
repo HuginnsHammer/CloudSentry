@@ -45,6 +45,8 @@ class OrganizationResponse(BaseModel):
     name: str
     slug: str
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class ProjectCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -90,7 +92,11 @@ class ProjectCreate(BaseModel):
             or parsed.query
             or parsed.fragment
             or len(segments) != 2
-            or any(segment in {"", ".", ".."} for segment in segments)
+            or any(
+                segment in {"", ".", ".."}
+                or not re.fullmatch(r"[A-Za-z0-9_.-]+", segment)
+                for segment in segments
+            )
         ):
             raise ValueError("repository_url must be an HTTPS GitHub repository URL")
         repository = segments[1][:-4] if segments[1].endswith(".git") else segments[1]
@@ -106,6 +112,8 @@ class ProjectResponse(BaseModel):
     slug: str
     repository_url: str | None
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class EnvironmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -116,7 +124,7 @@ class EnvironmentCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def clean_name(cls, value: str) -> str:
-        value = value.strip()
+        value = value.strip().lower()
         if not _ENVIRONMENT_NAME.fullmatch(value):
             raise ValueError("environment name contains unsupported characters")
         return value
@@ -128,3 +136,5 @@ class EnvironmentResponse(BaseModel):
     project_id: UUID
     name: str
     is_production: bool
+
+    model_config = ConfigDict(from_attributes=True)

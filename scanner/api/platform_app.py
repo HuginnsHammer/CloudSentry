@@ -19,7 +19,7 @@ from scanner.platform.models import Membership, Organization, Project, User
 
 app = FastAPI(
     title="CloudSentry Platform API",
-    version="0.2.0",
+    version="0.3.0",
     description="Authenticated tenant platform API. It imports reports but never executes scans.",
 )
 

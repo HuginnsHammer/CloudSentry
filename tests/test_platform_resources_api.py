@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -223,7 +223,7 @@ def test_resource_creation_writes_audit_events(resource_client):
     with factory() as session:
         actions = session.scalars(
             select(AuditEvent.action).where(
-                AuditEvent.organization_id == organization["id"]
+                AuditEvent.organization_id == UUID(organization["id"])
             )
         ).all()
     assert set(actions) == {
