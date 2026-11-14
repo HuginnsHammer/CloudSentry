@@ -42,11 +42,17 @@ appropriate organization membership through a trusted provisioning process.
 - `GET /api/v1/organizations`: organizations where the caller is a member.
 - `GET /api/v1/organizations/{organization_id}/projects`: projects in an
   organization only when the caller has a membership there.
+- `POST /api/v1/organizations/{organization_id}/projects/{project_id}/scans/ingest`:
+  import a bounded CLI report (owner, admin, security analyst only).
+- `GET /api/v1/organizations/{organization_id}/projects/{project_id}/scans` and
+  `GET .../scans/{scan_id}`: tenant-scoped scan history and details.
+- `GET .../projects/{project_id}/findings`: active findings by default; suppressed
+  findings require `include_suppressed=true`.
 
 Unknown and unauthorized organization IDs both return 404 to reduce tenant
-enumeration. These initial endpoints are read-only. Role-sensitive write
-operations, invitations, token refresh, SCIM, and administrative provisioning
-are not implemented yet.
+enumeration. Organization/project reads and scan history are available to members;
+scan ingestion and finding lifecycle updates enforce role policy. Invitations, token
+refresh, SCIM, and administrative provisioning are not implemented yet.
 
 ## Security limitations
 
