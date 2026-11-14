@@ -46,7 +46,7 @@ class GitHubAppClient:
                 self.private_key,
                 algorithm="RS256",
             )
-        except (TypeError, ValueError) as exc:
+        except (jwt.PyJWTError, TypeError, ValueError) as exc:
             raise GitHubAppConfigurationError("GitHub App private key could not sign a token") from exc
 
     def _request(
