@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from scanner.api.findings import router as findings_router
+from scanner.api.resources import router as resources_router
 from scanner.api.scans import router as scans_router
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ app = FastAPI(
 
 
 app.include_router(findings_router)
+app.include_router(resources_router)
 app.include_router(scans_router)
 
 
@@ -101,13 +103,18 @@ def list_projects(
     organization_id: UUID,
     membership: Membership = Depends(require_membership),
     session: Session = Depends(get_db_session),
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     projects = session.scalars(
         select(Project)
         .where(Project.organization_id == membership.organization_id)
         .order_by(Project.name)
     ).all()
     return [
-        {"id": str(project.id), "name": project.name, "slug": project.slug}
+        {
+            "id": str(project.id),
+            "name": project.name,
+            "slug": project.slug,
+            "repository_url": project.repository_url,
+        }
         for project in projects
     ]
