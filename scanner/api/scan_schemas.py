@@ -61,8 +61,6 @@ class ScanIngestRequest(BaseModel):
         fingerprints = [finding.fingerprint for finding in result.findings]
         if len(fingerprints) != len(set(fingerprints)):
             raise ValueError("scan result contains duplicate finding fingerprints")
-        if result.status == "error" and result.findings:
-            raise ValueError("an error scan cannot contain findings; submit a partial result instead")
         for finding in result.findings:
             if len(finding.fingerprint) > 128 or len(finding.rule_id) > 160:
                 raise ValueError("finding fingerprint or rule ID exceeds the platform limit")
@@ -73,10 +71,15 @@ class ScanIngestRequest(BaseModel):
             if len(finding.evidence) > 16384 or len(finding.remediation) > 8192:
                 raise ValueError("finding evidence or remediation exceeds the platform limit")
             path = finding.file_path
-            if not path or "\\" in path or "\x00" in path:
+            if not path or "\\" in path or any(ord(char) < 32 or ord(char) == 127 for char in path):
                 raise ValueError("finding file paths must be normalized relative paths")
             normalized = PurePosixPath(path)
-            if normalized.is_absolute() or any(part in {".", ".."} for part in normalized.parts):
+            if (
+                normalized.is_absolute()
+                or PureWindowsPath(path).is_absolute()
+                or not normalized.parts
+                or any(part in {".", ".."} for part in path.split("/"))
+            ):
                 raise ValueError("finding file paths must not be absolute or traverse directories")
             if len(path) > 2048:
                 raise ValueError("finding file path exceeds 2048 characters")
