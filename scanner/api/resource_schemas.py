@@ -124,7 +124,7 @@ class EnvironmentCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def clean_name(cls, value: str) -> str:
-        value = value.strip()
+        value = value.strip().lower()
         if not _ENVIRONMENT_NAME.fullmatch(value):
             raise ValueError("environment name contains unsupported characters")
         return value
