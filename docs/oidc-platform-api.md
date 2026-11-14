@@ -1,4 +1,4 @@
-# OIDC platform API — milestone 0.3
+# OIDC platform API — milestone 0.4
 
 ## Separation of trust boundaries
 
@@ -6,13 +6,14 @@ CloudSentry now has two FastAPI entry points:
 
 - `scanner.api.app:app` remains the local, loopback-only API. Its path-based
   scanner endpoint must not be exposed to the internet.
-- `scanner.api.platform_app:app` is the hosted platform API. It has no scan
-  endpoint and requires OIDC bearer authentication for all tenant data.
+- `scanner.api.platform_app:app` is the authenticated platform API. It accepts
+  bounded, client-submitted scan reports and exposes tenant-scoped scan history;
+  it never clones repositories, opens server paths, or executes a scan.
 
 Run the hosted API with:
 
 ```sh
-uvicorn scanner.api.platform_app:app --host 0.0.0.0 --port 8001
+uvicorn scanner.api.platform_app:app --host 127.0.0.1 --port 8001
 ```
 
 Do not deploy it until TLS termination, trusted proxy configuration, network
@@ -41,13 +42,25 @@ appropriate organization membership through a trusted provisioning process.
 - `GET /api/v1/organizations`: organizations where the caller is a member.
 - `GET /api/v1/organizations/{organization_id}/projects`: projects in an
   organization only when the caller has a membership there.
+- `POST /api/v1/organizations/{organization_id}/projects/{project_id}/scans/ingest`:
+  import a bounded CLI report (owner, admin, security analyst only).
+- `GET /api/v1/organizations/{organization_id}/projects/{project_id}/scans` and
+  `GET .../scans/{scan_id}`: tenant-scoped scan history and details.
+- `GET .../projects/{project_id}/findings`: active findings by default; suppressed
+  findings require `include_suppressed=true`.
 
 Unknown and unauthorized organization IDs both return 404 to reduce tenant
-enumeration. These initial endpoints are read-only. Role-sensitive write
-operations, invitations, token refresh, SCIM, and administrative provisioning
-are not implemented yet.
+enumeration. Organization/project reads and scan history are available to members;
+scan ingestion and finding lifecycle updates enforce role policy. Invitations, token
+refresh, SCIM, and administrative provisioning are not implemented yet.
 
 ## Security limitations
+
+Scan ingestion stores client-submitted data and marks its provenance
+`client_supplied_report_unverified`; it is not proof that CloudSentry ran or verified
+the scan. Complete and partial reports update observed findings, while failed reports
+do not mutate finding state. Missing findings are not automatically resolved. See
+[scan-result ingestion](scan-result-ingestion.md).
 
 This is an API foundation, not a complete production identity product. Before
 launch, add provider-specific OIDC integration tests, key-rotation and outage

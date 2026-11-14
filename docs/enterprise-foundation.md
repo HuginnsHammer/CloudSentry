@@ -2,8 +2,10 @@
 
 ## Scope
 
-This milestone introduces the first persistence boundary for CloudSentry's future
-organization-aware platform. It is intentionally not a public multi-user API.
+This milestone introduced the tenant-aware persistence boundary. Subsequent
+milestones added OIDC authentication, read-only organization/project access, finding
+lifecycle management, audit events, and bounded scan-result ingestion. It remains
+an early platform foundation, not a production-ready multi-user service.
 
 The local scanner remains usable without a database. Platform persistence is a
 separate package so deterministic analysis does not become coupled to HTTP,
@@ -16,8 +18,10 @@ authentication, or a hosted database.
 - Membership binds a user to an organization with owner, admin, security analyst,
   developer, or viewer role.
 - Project and Environment organize repositories and deployment contexts.
-- Scan stores a scan execution and status/summary.
-- Finding is a stable project-level issue identity with lifecycle state, evidence, remediation and assignee.
+- Scan stores an imported scan report, status, provenance and summary; it does not
+  prove that the hosted platform executed the scan.
+- Finding is a stable project-level issue identity with lifecycle state, evidence,
+  remediation, assignee and scanner-suppression metadata.
 - ScanFinding records each scan that observed a stable finding, preserving history across repeated scans.
 - AuditEvent records an actor, action, target and structured details.
 
@@ -38,20 +42,23 @@ committed to the repository.
 
 ## Security boundary and deliberate omissions
 
-This change does not expose network endpoints, implement login, issue tokens,
-or make the existing local path-based scan API safe for remote use. The current
-API must remain loopback-only. Do not deploy it as a company-facing service.
+The hosted platform API now verifies OIDC bearer tokens and scopes reads/writes to
+organization memberships. The separate local path-based scanner API remains
+loopback-only. Report ingestion accepts client-submitted JSON; it does not execute
+remote scans or provide verified scan provenance. Do not deploy either API as a
+company-facing service until the production controls below are complete.
 
 Before enabling organization-facing endpoints, implement and test:
 
-1. OIDC login with issuer, audience, signature, nonce and expiry validation.
-2. A request-scoped authenticated principal and organization membership checks.
-3. Authorization for every organization/project/environment resource.
-4. Scan-worker isolation with server-controlled workspaces; never accept arbitrary
-   filesystem paths from remote callers.
-5. Per-tenant quotas, rate limits, concurrency limits and audit events.
-6. Reviewed Alembic migrations and migration/rollback CI checks.
-7. Tenant-isolation integration tests against PostgreSQL, not only SQLite.
+1. Complete identity provisioning, invitations and lifecycle management; keep
+   external OIDC tokens as the sole authentication authority.
+2. Add isolated, resource-limited scan workers with server-managed source checkouts.
+3. Add signed scan provenance and idempotent ingestion/job processing.
+4. Add per-tenant quotas, rate limits, concurrency limits and request-size controls.
+5. Add production deployment, secrets management, TLS/proxy policy, monitoring,
+   backup/restore drills and incident response procedures.
+6. Run tenant-isolation and authorization integration tests against PostgreSQL,
+   not only SQLite.
 
 ## Acceptance criteria
 
@@ -65,8 +72,8 @@ Before enabling organization-facing endpoints, implement and test:
 
 ## Next implementation sequence
 
-1. Add a reviewed, immutable initial Alembic migration.
-2. Add PostgreSQL-backed integration tests and CI service container.
-3. Implement OIDC authentication and organization membership dependencies.
-4. Add organization/project APIs only after authorization tests pass.
-5. Move scanning to isolated background workers with server-managed source checkout.
+1. Expand PostgreSQL-backed tenant-isolation and API authorization tests.
+2. Add a secure worker/job pipeline and server-managed repository checkouts.
+3. Implement a least-privilege GitHub App and verified webhook-driven scans.
+4. Add cloud inventory connectors and drift detection only after scan provenance
+   and worker isolation are established.

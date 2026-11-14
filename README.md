@@ -14,6 +14,7 @@ CloudSentry is a lightweight, local-first static configuration auditor for Terra
 - Includes scan errors and warnings in SARIF invocation diagnostics, so incomplete scans remain visible in machine-readable output.
 - Supports reasoned suppressions and preserves suppression justifications in machine-readable reports.
 - Does not apply Terraform, build images, start containers, or execute scanned files.
+- Provides an authenticated platform API for importing bounded CLI reports, tracking scan history, and managing tenant-scoped findings; imports are explicitly marked as unverified client reports. See [scan-result ingestion](docs/scan-result-ingestion.md).
 
 ## Dashboard features
 

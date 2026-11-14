@@ -1,6 +1,6 @@
 """Validated payloads for importing a completed local CloudSentry scan."""
-from pathlib import PurePosixPath, PureWindowsPath
 from datetime import datetime
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Literal
 from uuid import UUID
 
@@ -44,33 +44,48 @@ class ScanIngestRequest(BaseModel):
             raise ValueError("result.status must be ok, partial, or error")
         if result.files_scanned < 0:
             raise ValueError("files_scanned cannot be negative")
-        if result.status == "ok" and result.errors:
-            raise ValueError("a complete scan cannot contain scan errors")
+        if result.status == "ok" and (result.errors or result.files_scanned == 0):
+            raise ValueError("a complete scan must inspect at least one file and contain no scan errors")
         if result.status == "partial" and (not result.errors or result.files_scanned == 0):
             raise ValueError("a partial scan must include errors and at least one inspected file")
-        if result.status == "error" and (result.files_scanned != 0 or result.findings):
-            raise ValueError("an error scan cannot claim inspected files or findings")
+        if result.status == "error" and (result.files_scanned != 0 or result.findings or not result.errors):
+            raise ValueError("an error scan must contain errors and no inspected files or findings")
         if any(key not in {"critical", "high", "medium", "low", "info"} or value < 0
                for key, value in result.severity_counts.items()):
             raise ValueError("severity_counts contains an invalid severity or negative count")
-        if len(result.scanner_version) > 40:
-            raise ValueError("scanner_version exceeds 40 characters")
+        if not result.scanner_version or len(result.scanner_version) > 40:
+            raise ValueError("scanner_version must be non-empty and at most 40 characters")
         if not 0 <= result.risk_score <= 100:
             raise ValueError("risk_score must be between 0 and 100")
-        if len(result.findings) > 5000 or len(result.errors) > 500 or len(result.warnings) > 500:
+        if len(result.findings) > 1000 or len(result.errors) > 100 or len(result.warnings) > 100:
             raise ValueError("scan result exceeds the platform ingestion limits")
         fingerprints = [finding.fingerprint for finding in result.findings]
         if len(fingerprints) != len(set(fingerprints)):
             raise ValueError("scan result contains duplicate finding fingerprints")
         for finding in result.findings:
-            if len(finding.fingerprint) > 128 or len(finding.rule_id) > 160:
-                raise ValueError("finding fingerprint or rule ID exceeds the platform limit")
+            if (not finding.fingerprint or len(finding.fingerprint) > 128
+                    or not finding.rule_id or len(finding.rule_id) > 160):
+                raise ValueError("finding fingerprint and rule ID must be non-empty and within platform limits")
+            if not finding.title.strip() or not finding.evidence.strip() or not finding.remediation.strip():
+                raise ValueError("finding title, evidence, and remediation must be non-empty")
+            if not finding.category or len(finding.category) > 80:
+                raise ValueError("finding category must be non-empty and at most 80 characters")
+            if finding.confidence not in {"high", "medium", "low"}:
+                raise ValueError("finding confidence must be high, medium, or low")
+            if finding.resource is not None and len(finding.resource) > 300:
+                raise ValueError("finding resource exceeds 300 characters")
             if len(finding.title) > 300 or len(finding.file_path) > 2048:
                 raise ValueError("finding title or file path exceeds the platform limit")
+            if len(finding.description) > 2000 or len(finding.impact) > 2000:
+                raise ValueError("finding description or impact exceeds 2000 characters")
+            if len(finding.references) > 10 or any(len(ref) > 512 for ref in finding.references):
+                raise ValueError("finding references exceed the platform limits")
             if (finding.suppression_reason is not None and len(finding.suppression_reason) > 2000):
                 raise ValueError("suppression reason exceeds 2000 characters")
-            if len(finding.evidence) > 16384 or len(finding.remediation) > 8192:
-                raise ValueError("finding evidence or remediation exceeds the platform limit")
+            if finding.suppressed and not (finding.suppression_reason or "").strip():
+                raise ValueError("suppressed findings must include their justification")
+            if len(finding.evidence) > 4096 or len(finding.remediation) > 4096:
+                raise ValueError("finding evidence or remediation exceeds 4096 characters")
             path = finding.file_path
             if not path or "\\" in path or any(ord(char) < 32 or ord(char) == 127 for char in path):
                 raise ValueError("finding file paths must be normalized relative paths")
@@ -79,14 +94,36 @@ class ScanIngestRequest(BaseModel):
                 normalized.is_absolute()
                 or PureWindowsPath(path).is_absolute()
                 or not normalized.parts
-                or any(part in {".", ".."} for part in path.split("/"))
+                or any(part == ".." for part in normalized.parts)
             ):
                 raise ValueError("finding file paths must not be absolute or traverse directories")
             if len(path) > 2048:
                 raise ValueError("finding file path exceeds 2048 characters")
+            if finding.line_start is not None and finding.line_start < 1:
+                raise ValueError("finding line_start must be positive")
+            if finding.line_end is not None and finding.line_end < 1:
+                raise ValueError("finding line_end must be positive")
             if finding.line_start is not None and finding.line_end is not None:
                 if finding.line_end < finding.line_start:
                     raise ValueError("finding line_end cannot be before line_start")
+        for diagnostic in [*result.errors, *result.warnings]:
+            path = diagnostic.file_path
+            if (
+                not path
+                or len(path) > 2048
+                or "\\" in path
+                or any(ord(char) < 32 or ord(char) == 127 for char in path)
+            ):
+                raise ValueError("diagnostic paths must be normalized relative paths")
+            normalized = PurePosixPath(path)
+            if (
+                normalized.is_absolute()
+                or PureWindowsPath(path).is_absolute()
+                or any(part == ".." for part in path.split("/"))
+            ):
+                raise ValueError("diagnostic paths must not be absolute or traverse directories")
+            if len(diagnostic.message) > 2048:
+                raise ValueError("diagnostic message exceeds 2048 characters")
         return self
 
 
@@ -110,6 +147,7 @@ class ScanResponse(BaseModel):
     target: str
     scanner_version: str
     summary: dict[str, object]
+    diagnostics: dict[str, object]
     started_at: datetime
     completed_at: datetime | None
 
