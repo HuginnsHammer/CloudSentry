@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import gzip
 import io
 import json
 import os
@@ -21,6 +22,8 @@ from scanner.scoring import summarize
 
 MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
 MAX_EXTRACTED_BYTES = 200 * 1024 * 1024
+MAX_DECOMPRESSED_TAR_BYTES = 216 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 20000
 MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_FILES = 5000
 MAX_DIRECTORIES = 10000
@@ -43,6 +46,22 @@ class ArchiveError(ValueError):
     """An archive violated extraction safety limits."""
 
 
+class _LimitedReader:
+    def __init__(self, stream, limit: int):
+        self.stream = stream
+        self.limit = limit
+        self.total = 0
+
+    def read(self, size: int = -1) -> bytes:
+        remaining = self.limit - self.total
+        requested = remaining + 1 if size < 0 else min(size, remaining + 1)
+        data = self.stream.read(requested)
+        self.total += len(data)
+        if self.total > self.limit:
+            raise ArchiveError("Decompressed tar stream exceeded the 216 MiB safety limit")
+        return data
+
+
 def _read_secret() -> str:
     secret = os.getenv("CLOUDSENTRY_EXECUTOR_SHARED_SECRET", "")
     if len(secret) < 32:
@@ -58,84 +77,96 @@ def _safe_extract(archive_bytes: bytes, workspace: Path) -> list[ScanError]:
     total_bytes = 0
     file_count = 0
     directory_count = 0
+    entry_count = 0
     skipped: list[ScanError] = []
     root = workspace.resolve()
 
     try:
-        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as tar:
-            for member in tar:
-                raw_name = member.name
-                if (
-                    not raw_name
-                    or "\\" in raw_name
-                    or "\x00" in raw_name
-                    or len(raw_name) > 4096
-                ):
-                    raise ArchiveError("Archive contains an invalid path")
-                stripped = raw_name.rstrip("/")
-                if not stripped:
-                    raise ArchiveError("Archive contains an empty path")
-                if stripped.startswith("/") or PurePosixPath(stripped).is_absolute() or PureWindowsPath(stripped).drive:
-                    raise ArchiveError("Archive contains an absolute path")
-                parts = stripped.split("/")
-                if len(parts) > 65 or any(part in {"", ".", ".."} for part in parts):
-                    raise ArchiveError("Archive path traversal or excessive path depth detected")
-                if root_name is None:
-                    root_name = parts[0]
-                if parts[0] != root_name:
-                    raise ArchiveError("Archive contains multiple root directories")
-                if len(parts) == 1:
-                    if not member.isdir():
-                        raise ArchiveError("Archive root entry must be a directory")
-                    continue
-
-                relative_parts = parts[1:]
-                relative_path = "/".join(relative_parts)
-                destination = workspace.joinpath(*relative_parts)
-                if not destination.resolve().is_relative_to(root):
-                    raise ArchiveError("Archive path escapes the extraction directory")
-
-                if member.isdir():
-                    directory_count += 1
-                    if directory_count > MAX_DIRECTORIES:
-                        raise ArchiveError("Archive contains too many directories")
-                    destination.mkdir(parents=True, exist_ok=True, mode=0o700)
-                    continue
-
-                if member.issym() or member.islnk():
-                    if len(skipped) < MAX_DIAGNOSTICS:
-                        skipped.append(
-                            ScanError(
-                                file_path=relative_path,
-                                kind="archive",
-                                message="Symbolic and hard links are skipped for safety.",
+        with gzip.GzipFile(fileobj=io.BytesIO(archive_bytes), mode="rb") as compressed:
+            limited = _LimitedReader(compressed, MAX_DECOMPRESSED_TAR_BYTES)
+            with tarfile.open(fileobj=limited, mode="r|") as tar:
+                for member in tar:
+                    entry_count += 1
+                    if entry_count > MAX_ARCHIVE_ENTRIES:
+                        raise ArchiveError("Archive contains too many entries")
+                    raw_name = member.name
+                    if (
+                        not raw_name
+                        or "\\" in raw_name
+                        or "\x00" in raw_name
+                        or len(raw_name) > 4096
+                    ):
+                        raise ArchiveError("Archive contains an invalid path")
+                    stripped = raw_name.rstrip("/")
+                    if not stripped:
+                        raise ArchiveError("Archive contains an empty path")
+                    if stripped.startswith("/") or PurePosixPath(stripped).is_absolute() or PureWindowsPath(stripped).drive:
+                        raise ArchiveError("Archive contains an absolute path")
+                    parts = stripped.split("/")
+                    if len(parts) > 65 or any(part in {"", ".", ".."} for part in parts):
+                        raise ArchiveError("Archive path traversal or excessive path depth detected")
+                    if root_name is None:
+                        root_name = parts[0]
+                    if parts[0] != root_name:
+                        raise ArchiveError("Archive contains multiple root directories")
+                    if len(parts) == 1:
+                        if not member.isdir():
+                            raise ArchiveError("Archive root entry must be a directory")
+                        continue
+    
+                    relative_parts = parts[1:]
+                    relative_path = "/".join(relative_parts)
+                    destination = workspace.joinpath(*relative_parts)
+                    if not destination.resolve().is_relative_to(root):
+                        raise ArchiveError("Archive path escapes the extraction directory")
+    
+                    if member.isdir():
+                        directory_count += 1
+                        if directory_count > MAX_DIRECTORIES:
+                            raise ArchiveError("Archive contains too many directories")
+                        destination.mkdir(parents=True, exist_ok=True, mode=0o700)
+                        continue
+    
+                    if member.issym() or member.islnk():
+                        if len(skipped) < MAX_DIAGNOSTICS:
+                            skipped.append(
+                                ScanError(
+                                    file_path=relative_path,
+                                    kind="archive",
+                                    message="Symbolic and hard links are skipped for safety.",
+                                )
                             )
-                        )
-                    continue
-                if getattr(member, "issparse", lambda: False)() or not member.isfile():
-                    raise ArchiveError("Archive contains an unsupported special file")
-                if member.size < 0 or member.size > MAX_FILE_BYTES:
-                    raise ArchiveError("Archive contains a file larger than the 10 MiB extraction limit")
-
-                file_count += 1
-                total_bytes += member.size
-                if file_count > MAX_FILES or total_bytes > MAX_EXTRACTED_BYTES:
-                    raise ArchiveError("Archive exceeds file-count or total extracted-size limits")
-
-                destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                source = tar.extractfile(member)
-                if source is None:
-                    raise ArchiveError("Archive file contents could not be read")
-                written = 0
-                with source, destination.open("xb") as output:
-                    while chunk := source.read(64 * 1024):
-                        written += len(chunk)
-                        if written > member.size:
-                            raise ArchiveError("Archive member exceeded its declared size")
-                        output.write(chunk)
-                if written != member.size:
-                    raise ArchiveError("Archive member size did not match its header")
-                destination.chmod(0o600)
+                        else:
+                            skipped[-1] = ScanError(
+                                file_path=".",
+                                kind="archive",
+                                message="Additional symbolic and hard links were omitted from diagnostics.",
+                            )
+                        continue
+                    if getattr(member, "issparse", lambda: False)() or not member.isfile():
+                        raise ArchiveError("Archive contains an unsupported special file")
+                    if member.size < 0 or member.size > MAX_FILE_BYTES:
+                        raise ArchiveError("Archive contains a file larger than the 10 MiB extraction limit")
+    
+                    file_count += 1
+                    total_bytes += member.size
+                    if file_count > MAX_FILES or total_bytes > MAX_EXTRACTED_BYTES:
+                        raise ArchiveError("Archive exceeds file-count or total extracted-size limits")
+    
+                    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    source = tar.extractfile(member)
+                    if source is None:
+                        raise ArchiveError("Archive file contents could not be read")
+                    written = 0
+                    with source, destination.open("xb") as output:
+                        while chunk := source.read(64 * 1024):
+                            written += len(chunk)
+                            if written > member.size:
+                                raise ArchiveError("Archive member exceeded its declared size")
+                            output.write(chunk)
+                    if written != member.size:
+                        raise ArchiveError("Archive member size did not match its header")
+                    destination.chmod(0o600)
     except (tarfile.TarError, OSError, EOFError) as exc:
         raise ArchiveError("Source archive is malformed or could not be extracted safely") from exc
 
