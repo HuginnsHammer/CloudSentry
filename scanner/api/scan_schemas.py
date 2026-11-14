@@ -122,11 +122,13 @@ class ScanIngestRequest(BaseModel):
                 or any(part == ".." for part in path.split("/"))
             ):
                 raise ValueError("diagnostic paths must not be absolute or traverse directories")
-            if not diagnostic.kind or len(diagnostic.kind) > 80:
+            kind = getattr(diagnostic, "kind", None)
+            if kind is not None and (not kind or len(kind) > 80):
                 raise ValueError("diagnostic kind must be non-empty and at most 80 characters")
             if len(diagnostic.message) > 2048:
                 raise ValueError("diagnostic message exceeds 2048 characters")
-            if diagnostic.line_start is not None and diagnostic.line_start < 1:
+            line_start = getattr(diagnostic, "line_start", None)
+            if line_start is not None and line_start < 1:
                 raise ValueError("diagnostic line_start must be positive")
         return self
 
