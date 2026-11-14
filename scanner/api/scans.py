@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from scanner.api.scan_schemas import ScanIngestRequest, ScanIngestResponse
 from scanner.platform.dependencies import get_current_user, get_db_session, require_membership
+from scanner.scoring import summarize
 from scanner.platform.models import (
     AuditEvent,
     Environment,
@@ -81,6 +82,7 @@ def ingest_scan_result(
         "error": ScanStatus.FAILED,
     }
     now = datetime.now(timezone.utc)
+    verified_risk_score, verified_severity_counts = summarize(result.findings)
     summary = {
         "files_scanned": result.files_scanned,
         "findings_total": len(result.findings),
@@ -88,9 +90,11 @@ def ingest_scan_result(
         "suppressed_findings": sum(item.suppressed for item in result.findings),
         "errors_count": len(result.errors),
         "warnings_count": len(result.warnings),
-        "risk_score": result.risk_score,
-        "severity_counts": result.severity_counts,
+        # Recompute from ingested findings; never trust a client-supplied aggregate.
+        "risk_score": verified_risk_score,
+        "severity_counts": verified_severity_counts,
         "source_revision": payload.source_revision,
+        "ingestion_provenance": "client_supplied_report_unverified",
     }
     scan = Scan(
         organization_id=organization_id,
