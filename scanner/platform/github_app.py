@@ -136,6 +136,15 @@ class GitHubAppClient:
                         for key in ("full_name", "html_url", "default_branch")
                     ):
                         raise GitHubAppError("GitHub repository response is missing required metadata")
+                    if (
+                        not repository["full_name"].strip()
+                        or len(repository["full_name"]) > 255
+                        or not repository["html_url"].strip()
+                        or len(repository["html_url"]) > 2048
+                        or not repository["default_branch"].strip()
+                        or len(repository["default_branch"]) > 255
+                    ):
+                        raise GitHubAppError("GitHub repository metadata exceeded platform limits")
                     return {
                         "id": repository_id,
                         "full_name": repository["full_name"],
