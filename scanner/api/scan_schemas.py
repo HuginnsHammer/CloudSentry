@@ -94,7 +94,7 @@ class ScanIngestRequest(BaseModel):
                 normalized.is_absolute()
                 or PureWindowsPath(path).is_absolute()
                 or not normalized.parts
-                or any(part in {".", ".."} for part in path.split("/"))
+                or any(part == ".." for part in normalized.parts)
             ):
                 raise ValueError("finding file paths must not be absolute or traverse directories")
             if len(path) > 2048:
