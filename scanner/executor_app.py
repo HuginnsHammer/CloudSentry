@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import hmac
 import io
 import json
 import os
 import re
-import resource
 import subprocess
 import sys
 import tarfile
@@ -18,7 +16,6 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from scanner.engine import result_json
 from scanner.models import ScanError, ScanResult, ScanWarning, Severity
 from scanner.scoring import summarize
 
@@ -31,6 +28,7 @@ MAX_FINDINGS = 1000
 MAX_DIAGNOSTICS = 100
 MAX_REPORT_BYTES = 20 * 1024 * 1024
 MAX_SCAN_SECONDS = 120
+_SCAN_SEMAPHORE = asyncio.Semaphore(1)
 _SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 app = FastAPI(
@@ -50,10 +48,6 @@ def _read_secret() -> str:
     if len(secret) < 32:
         raise HTTPException(status_code=503, detail="Executor authentication is not configured")
     return secret
-
-
-def _read_limited_body(request: Request) -> bytes:
-    raise NotImplementedError
 
 
 def _safe_extract(archive_bytes: bytes, workspace: Path) -> list[ScanError]:
@@ -118,7 +112,7 @@ def _safe_extract(archive_bytes: bytes, workspace: Path) -> list[ScanError]:
                             )
                         )
                     continue
-                if member.issparse() or not member.isfile():
+                if getattr(member, "issparse", lambda: False)() or not member.isfile():
                     raise ArchiveError("Archive contains an unsupported special file")
                 if member.size < 0 or member.size > MAX_FILE_BYTES:
                     raise ArchiveError("Archive contains a file larger than the 10 MiB extraction limit")
@@ -148,17 +142,6 @@ def _safe_extract(archive_bytes: bytes, workspace: Path) -> list[ScanError]:
     if root_name is None:
         raise ArchiveError("Archive contains no repository root directory")
     return skipped
-
-
-def _apply_process_limits() -> None:
-    memory = 768 * 1024 * 1024
-    resource.setrlimit(resource.RLIMIT_CPU, (MAX_SCAN_SECONDS, MAX_SCAN_SECONDS))
-    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_REPORT_BYTES, MAX_REPORT_BYTES))
-    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    if hasattr(resource, "RLIMIT_NPROC"):
-        resource.setrlimit(resource.RLIMIT_NPROC, (32, 32))
 
 
 def _normalize_path(value: str) -> str:
@@ -271,7 +254,6 @@ def _scan_archive(archive_bytes: bytes) -> ScanResult:
                 timeout=MAX_SCAN_SECONDS + 10,
                 check=False,
                 close_fds=True,
-                preexec_fn=_apply_process_limits,
             )
         except subprocess.TimeoutExpired:
             raise ArchiveError("Static scan exceeded its execution time limit") from None
@@ -318,6 +300,9 @@ async def scan_archive(request: Request) -> JSONResponse:
     ):
         raise HTTPException(status_code=400, detail="Invalid scan target")
 
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/gzip":
+        raise HTTPException(status_code=415, detail="Content-Type must be application/gzip")
+
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
@@ -327,7 +312,8 @@ async def scan_archive(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail="Source archive is empty")
 
     try:
-        result = await asyncio.to_thread(_scan_archive, bytes(body))
+        async with _SCAN_SEMAPHORE:
+            result = await asyncio.to_thread(_scan_archive, bytes(body))
     except ArchiveError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     return JSONResponse({"source_revision": revision.lower(), "target": target, "result": result.model_dump(mode="json")})
