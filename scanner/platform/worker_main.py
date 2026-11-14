@@ -146,6 +146,33 @@ def process_claimed_job(
 
     completed_at = _utcnow()
     with session_factory() as session:
+        project = session.scalar(
+            select(Project)
+            .where(
+                Project.id == context.project_id,
+                Project.organization_id == context.organization_id,
+            )
+            .with_for_update()
+        )
+        installation = session.scalar(
+            select(GitHubInstallation)
+            .where(
+                GitHubInstallation.installation_id == context.installation_id,
+                GitHubInstallation.organization_id == context.organization_id,
+                GitHubInstallation.status == "active",
+            )
+            .with_for_update()
+        )
+        if (
+            project is None
+            or installation is None
+            or project.github_installation_id != context.installation_id
+            or project.github_repository_id != context.repository_id
+            or project.github_repository_full_name != context.repository_full_name
+            or project.github_default_branch is None
+            or context.ref != f"refs/heads/{project.github_default_branch}"
+        ):
+            raise PermanentJobError("Repository binding or GitHub installation changed during the scan")
         if not complete_job(session, job_id, worker_id, now=completed_at):
             session.rollback()
             return False
