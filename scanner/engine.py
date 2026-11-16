@@ -1,5 +1,6 @@
 """File discovery, safe parsing, rule dispatch, and result normalization."""
 import json
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -14,15 +15,36 @@ from scanner.scoring import summarize
 from scanner.suppression import apply_suppressions, directive_warnings
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
+EXCLUDED_DIRECTORY_NAMES = {
+    ".git",
+    ".venv",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".idea",
+    ".vscode",
+    "__pycache__",
+    "node_modules",
+    "build",
+    "dist",
+}
+
 
 def detect_kind(path: Path) -> str | None:
-    if path.name.lower() == "dockerfile" or path.name.lower().startswith("dockerfile."):
+    name = path.name.lower()
+    if name == "dockerfile" or (
+        name.startswith("dockerfile.")
+        and path.suffix.lower() not in {".pyc", ".pyo"}
+    ):
         return "dockerfile"
     if path.suffix.lower() == ".tf":
         return "terraform"
     if path.suffix.lower() in {".yaml", ".yml"}:
         return "yaml"
     return None
+
 
 def discover(paths: Iterable[Path]) -> list[Path]:
     found: set[Path] = set()
@@ -31,11 +53,19 @@ def discover(paths: Iterable[Path]) -> list[Path]:
             if detect_kind(item):
                 found.add(item)
         elif item.is_dir():
-            for candidate in item.rglob("*"):
-                excluded = {".git", ".venv", "node_modules"}
-                if candidate.is_file() and detect_kind(candidate) and not any(p in excluded for p in candidate.parts):
-                    found.add(candidate)
+            for root, directories, filenames in os.walk(item, topdown=True, followlinks=False):
+                directories[:] = sorted(
+                    name
+                    for name in directories
+                    if name.lower() not in EXCLUDED_DIRECTORY_NAMES
+                    and not (Path(root) / name).is_symlink()
+                )
+                for filename in filenames:
+                    candidate = Path(root) / filename
+                    if candidate.is_file() and detect_kind(candidate):
+                        found.add(candidate)
     return sorted(found)
+
 
 def scan_paths(paths: Iterable[Path]) -> ScanResult:
     result = ScanResult(status="ok")
@@ -67,7 +97,7 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
                 ScanError(
                     file_path=str(item),
                     kind="unsupported",
-                    message="Unsupported file type. Expected a Dockerfile, .tf, .yaml, or .yml Compose file.",
+                    message="Unsupported file type. Expected a Dockerfile, .tf, or .yaml/.yml Compose file.",
                 )
             )
         elif item.is_dir() and not any(
@@ -148,6 +178,7 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
     if result.errors:
         result.status = "partial" if result.files_scanned else "error"
     return result
+
 
 def result_json(result: ScanResult) -> str:
     return json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True)
