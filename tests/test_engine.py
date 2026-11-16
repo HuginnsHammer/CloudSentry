@@ -47,7 +47,6 @@ def test_unused_directive_becomes_a_warning_with_file_and_line(tmp_path: Path):
     assert result.status == "ok"
 
 
-
 def test_directory_without_supported_files_is_an_error(tmp_path: Path):
     (tmp_path / "README.md").write_text("Nothing to scan here.\n", encoding="utf-8")
 
@@ -85,7 +84,6 @@ def test_explicit_unsupported_file_prevents_a_false_clean_result(tmp_path: Path)
     assert any(error.kind == "unsupported" and error.file_path == str(readme) for error in result.errors)
 
 
-
 def test_nonexistent_scan_path_is_an_error(tmp_path: Path):
     missing = tmp_path / "missing"
 
@@ -95,3 +93,33 @@ def test_nonexistent_scan_path_is_an_error(tmp_path: Path):
     assert result.files_scanned == 0
     assert result.errors[0].kind == "input"
     assert result.errors[0].file_path == str(missing)
+
+
+def test_repository_discovery_skips_generated_files_and_keeps_named_dockerfiles(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    (tmp_path / "Dockerfile.dev").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    generated = tmp_path / "__pycache__"
+    generated.mkdir()
+    (generated / "Dockerfile.cpython-314.pyc").write_bytes(b"not a Dockerfile")
+    nested = tmp_path / "src" / "node_modules" / "package"
+    nested.mkdir(parents=True)
+    (nested / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 2
+    assert {Path(finding.file_path).name for finding in result.findings} == {"Dockerfile", "Dockerfile.dev"}
+    assert not any("__pycache__" in error.file_path or "node_modules" in error.file_path for error in result.errors)
+
+
+def test_directory_with_only_generated_dockerfile_artifacts_is_not_scanned(tmp_path: Path):
+    generated = tmp_path / "__pycache__"
+    generated.mkdir()
+    (generated / "Dockerfile.cpython-314.pyc").write_bytes(b"not a Dockerfile")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "discovery"
