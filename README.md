@@ -14,8 +14,9 @@ CloudSentry is a lightweight, local-first static configuration auditor for Terra
 - Includes scan errors and warnings in SARIF invocation diagnostics, so incomplete scans remain visible in machine-readable output.
 - Supports reasoned suppressions and preserves suppression justifications in machine-readable reports.
 - Does not apply Terraform, build images, start containers, or execute scanned files.
-- Provides an authenticated platform API for importing bounded CLI reports, tracking scan history, and managing tenant-scoped findings; imports are explicitly marked as unverified client reports. See [scan-result ingestion](docs/scan-result-ingestion.md).
-- Supports GitHub App installation binding and signed default-branch push events that enqueue durable scan jobs. Job execution is not yet enabled; see [GitHub App integration](docs/github-app-integration.md).
+- Provides a PostgreSQL-backed platform API for organizations, projects, environments, scan history, tenant-scoped findings, finding lifecycle and audit events. See [enterprise foundation](docs/enterprise-foundation.md).
+- Accepts bounded client-submitted scan reports as explicitly unverified imports, and supports server-managed scan provenance for the GitHub worker pipeline. See [scan-result ingestion](docs/scan-result-ingestion.md).
+- Supports GitHub App installation binding, signed default-branch push webhooks, durable scan jobs, a worker and a separate executor service. The executor has bounded archive extraction and scan execution, but production deployment must still enforce OS/container isolation, network restrictions and resource limits. See [GitHub App integration](docs/github-app-integration.md).
 
 ## Dashboard features
 
@@ -75,7 +76,7 @@ npm run dev -- --host 127.0.0.1
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173) in your browser. Enter the path to a configuration file or directory on the **same machine running the API**, then select **Run scan**. The API health endpoint is available at [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health).
 
-**Security note:** Keep the API bound to loopback (`127.0.0.1`). The scan endpoint accepts local filesystem paths and is intended for local development; do not expose it to a network or untrusted clients.
+**Security note:** Keep the local path-based API bound to loopback (`127.0.0.1`). It accepts filesystem paths and is intended for local development; do not expose it to a network or untrusted clients. The organization platform API is a separate service boundary and must be deployed with the production controls described in the platform documentation.
 
 ## Try a small demo scan
 

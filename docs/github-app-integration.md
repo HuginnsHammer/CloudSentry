@@ -1,14 +1,18 @@
-# GitHub App integration and push-triggered scan queue
+# GitHub App integration and managed scan execution
 
 ## Current scope
 
 CloudSentry can register a GitHub App installation, verify a repository belongs to
 that installation, and turn pushes to the repository's configured default branch
-into durable scan jobs.
+into durable scan jobs. A separate worker can acquire the pinned source archive,
+submit it to the private executor service, validate the returned report, and
+persist the scan result and job completion transactionally.
 
-**This milestone does not execute scans.** Jobs remain queued until a separately
-deployed, isolated worker is implemented. Do not describe this as continuous
-scanning or assume a repository has been inspected merely because a job was queued.
+This is an implemented execution path, not a production security boundary by
+itself. The executor performs bounded archive extraction and runs the static
+scanner in a subprocess with a timeout. Those controls do **not** replace an
+OS/container sandbox. Do not expose this pipeline to untrusted repositories
+until the deployment enforces the isolation requirements below.
 
 ## Required GitHub App configuration
 
@@ -102,34 +106,93 @@ payload is rejected. Raw webhook bodies and installation tokens are not stored.
 Installation suspend/delete events disable future job creation. Unsuspend events
 reactivate the installation. Non-default branches and unrelated events are ignored.
 
-## Scan job status
+## Worker and executor configuration
 
-List project jobs:
+The control-plane worker requires:
 
-`GET /api/v1/organizations/{organization_id}/projects/{project_id}/scan-jobs`
+- `CLOUDSENTRY_DATABASE_URL`
+- `CLOUDSENTRY_GITHUB_APP_ID`
+- `CLOUDSENTRY_GITHUB_APP_PRIVATE_KEY`
+- `CLOUDSENTRY_EXECUTOR_SHARED_SECRET`
 
-Get one job:
+The executor requires the same `CLOUDSENTRY_EXECUTOR_SHARED_SECRET`. Generate a
+cryptographically random value of at least 32 characters and inject it through a
+secret manager into only the worker and executor. Do not give the executor the
+database URL, GitHub App private key, OIDC signing/verification configuration, or
+other control-plane credentials.
 
-`GET /api/v1/organizations/{organization_id}/projects/{project_id}/scan-jobs/{job_id}`
+The worker uses:
 
-Jobs are deduplicated by organization, project, ref and commit SHA. The database
-includes attempt limits, availability time and lease fields for a future worker.
-No worker claim, heartbeat, cancellation, source checkout or sandbox execution
-endpoint is enabled yet. A queued job is a request for work, not evidence of a scan.
+- `CLOUDSENTRY_WORKER_ID` (optional; generated if omitted)
+- `CLOUDSENTRY_WORKER_POLL_SECONDS` (0.5–60 seconds)
+- `CLOUDSENTRY_WORKER_LEASE_SECONDS` (120–3600 seconds; default 900)
+- `CLOUDSENTRY_EXECUTOR_URL` (must be the private
+  `http://scan-executor:8081/internal/v1/scan` service endpoint)
 
-## Webhook security and operations
+Start the processes using the installed package entry points:
 
-- HMAC-SHA256 verification uses the exact raw request body.
-- Declared and actual payload size is limited to 1 MiB.
-- Delivery IDs must be UUIDs; payload digests detect delivery-ID reuse.
-- Unknown event types are recorded as ignored.
-- Database failures return an error so GitHub can retry.
-- Installation tokens are short-lived and never stored.
-- The App is granted read-only repository permissions.
+```sh
+uvicorn scanner.api.app:app --host 0.0.0.0 --port 8000
+python -m scanner.platform.worker_main
+uvicorn scanner.executor_app:app --host 0.0.0.0 --port 8081
+```
 
-Before production use, configure TLS, trusted proxy/network policy, secret rotation,
-webhook monitoring, rate limits, job backlog alerts and a retention policy for
-webhook delivery records. The scan worker must be implemented with server-managed
-source acquisition, no scanner access to the control-plane secrets, resource limits,
-network isolation and transactional result ingestion before any job is marked
-completed.
+These commands describe process roles, not a production deployment recipe. The
+executor must be reachable only from the worker over a private network. The local
+path-based scan API must remain separate and loopback-only.
+
+The worker currently uses a bounded lease without a renewal heartbeat. Keep
+executor timeouts below the configured lease duration and monitor for expired
+leases and repeated retries. Lease renewal, cancellation when ownership is lost,
+and a fully supervised deployment remain follow-up work.
+
+## Mandatory deployment isolation
+
+Before enabling scans of untrusted repositories, deploy the executor with all of
+the following enforced outside the application process:
+
+- Dedicated unprivileged UID/GID; no root execution.
+- No Docker/container-runtime socket, host mounts, host PID namespace or host
+  networking.
+- Read-only root filesystem with a small, bounded writable temporary filesystem.
+- No outbound network access; no DNS or metadata-service access.
+- Drop all Linux capabilities and apply seccomp/AppArmor or an equivalent policy.
+- Explicit CPU, memory, PID, file-size, open-file and wall-clock limits.
+- Ephemeral per-job workspace, removed after each scan.
+- Executor service authentication and network policy allowing only the worker.
+- Separate secrets: the executor receives only its worker-shared authentication
+  secret and never receives GitHub or database credentials.
+
+The current repository does not include a deployment manifest proving these
+controls. A separate service or subprocess alone is not a sandbox.
+
+## Scan result and provenance
+
+The worker binds a scan to the immutable commit SHA and verified repository
+identity. The executor response must match the requested target and revision.
+The worker validates the report against the same bounded ingestion schema used
+for client imports, rechecks the project/repository/installation binding, and
+persists the result and job completion in one database transaction.
+
+Client-submitted reports remain marked as unverified imports. Worker-produced
+reports use `server_managed_worker` provenance. Provenance identifies the
+application execution path; it is not cryptographic attestation of the host or
+container runtime.
+
+## Operations and acceptance criteria
+
+Before production use:
+
+1. Add executor-specific API tests and an end-to-end worker → archive → executor →
+   persistence integration test.
+2. Implement lease renewal and terminate in-flight work when lease ownership is lost.
+3. Enforce and test the deployment isolation controls above.
+4. Add backlog, retry, lease-expiry, executor-health and scan-duration metrics/alerts.
+5. Add quotas, rate limits, concurrency controls and per-tenant retention policy.
+6. Test installation revocation, repository unbinding, webhook replay and
+   permission changes during active scans.
+7. Configure TLS, trusted proxy policy, secret rotation, backups and restore drills.
+
+A queued job is a request for work, not evidence of a completed scan. A completed
+scan records what the configured scanner inspected at a pinned revision; it does
+not prove that all infrastructure risk was detected.
