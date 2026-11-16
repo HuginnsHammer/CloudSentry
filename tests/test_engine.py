@@ -123,3 +123,22 @@ def test_directory_with_only_generated_dockerfile_artifacts_is_not_scanned(tmp_p
     assert result.status == "error"
     assert result.files_scanned == 0
     assert result.errors[0].kind == "discovery"
+
+
+
+def test_directory_discovery_does_not_follow_symlinked_configuration_files(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside-Dockerfile"
+    outside.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    link = workspace / "Dockerfile"
+    try:
+        link.symlink_to(outside)
+    except (NotImplementedError, OSError):
+        return
+
+    result = scan_paths([workspace])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "discovery"
