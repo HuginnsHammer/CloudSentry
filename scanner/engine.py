@@ -62,7 +62,7 @@ def discover(paths: Iterable[Path]) -> list[Path]:
                 )
                 for filename in filenames:
                     candidate = Path(root) / filename
-                    if candidate.is_file() and detect_kind(candidate):
+                    if candidate.is_file() and not candidate.is_symlink() and detect_kind(candidate):
                         found.add(candidate)
     return sorted(found)
 
