@@ -256,3 +256,10 @@ def test_cache_directory_exclusion_is_case_insensitive(tmp_path: Path):
 
     assert result.status == "ok"
     assert result.files_scanned == 1
+
+def test_python_bytecode_named_dockerfile_is_not_detected():
+    from scanner.engine import detect_kind
+
+    assert detect_kind(Path("Dockerfile.cpython-314.pyc")) is None
+    assert detect_kind(Path("Dockerfile.pyo")) is None
+    assert detect_kind(Path("Dockerfile.dev")) == "dockerfile"
