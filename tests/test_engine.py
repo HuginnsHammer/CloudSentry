@@ -173,3 +173,12 @@ def test_common_generated_directories_are_excluded(tmp_path: Path):
     assert result.files_scanned == 1
     assert all(directory not in finding.file_path for finding in result.findings for directory in
                (".terraform", ".cache", ".next", ".serverless", ".turbo", ".angular", "coverage"))
+
+def test_duplicate_scan_inputs_are_processed_once(tmp_path: Path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+
+    result = scan_paths([dockerfile, dockerfile])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
