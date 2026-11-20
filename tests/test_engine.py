@@ -142,3 +142,20 @@ def test_directory_discovery_does_not_follow_symlinked_configuration_files(tmp_p
     assert result.status == "error"
     assert result.files_scanned == 0
     assert result.errors[0].kind == "discovery"
+
+
+def test_explicit_symlink_target_is_rejected(tmp_path: Path):
+    target = tmp_path / "real-Dockerfile"
+    target.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    link = tmp_path / "Dockerfile"
+    try:
+        link.symlink_to(target)
+    except (NotImplementedError, OSError):
+        return
+
+    result = scan_paths([link])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "input"
+    assert "Symbolic links" in result.errors[0].message
