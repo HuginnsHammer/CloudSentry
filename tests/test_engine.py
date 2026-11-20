@@ -201,3 +201,14 @@ def test_invalid_compose_yaml_is_reported_as_parse_error(tmp_path: Path):
     assert result.status == "error"
     assert result.files_scanned == 0
     assert result.errors[0].kind == "parse"
+
+def test_compose_services_must_be_a_mapping(tmp_path: Path):
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services:\n  - app\n", encoding="utf-8")
+
+    result = scan_paths([compose])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "parse"
+    assert "services" in result.errors[0].message
