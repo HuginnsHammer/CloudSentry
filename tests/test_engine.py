@@ -142,3 +142,131 @@ def test_directory_discovery_does_not_follow_symlinked_configuration_files(tmp_p
     assert result.status == "error"
     assert result.files_scanned == 0
     assert result.errors[0].kind == "discovery"
+
+
+def test_explicit_symlink_target_is_rejected(tmp_path: Path):
+    target = tmp_path / "real-Dockerfile"
+    target.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    link = tmp_path / "Dockerfile"
+    try:
+        link.symlink_to(target)
+    except (NotImplementedError, OSError):
+        return
+
+    result = scan_paths([link])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "input"
+    assert "Symbolic links" in result.errors[0].message
+
+def test_common_generated_directories_are_excluded(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    for directory in (".terraform", ".cache", ".next", ".serverless", ".turbo", ".angular", "coverage"):
+        generated = tmp_path / directory
+        generated.mkdir()
+        (generated / "Dockerfile").write_text("FROM alpine:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
+    assert all(directory not in finding.file_path for finding in result.findings for directory in
+               (".terraform", ".cache", ".next", ".serverless", ".turbo", ".angular", "coverage"))
+
+def test_duplicate_scan_inputs_are_processed_once(tmp_path: Path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+
+    result = scan_paths([dockerfile, dockerfile])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
+
+def test_overlapping_directory_and_file_inputs_are_deduplicated(tmp_path: Path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path, dockerfile])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
+
+def test_invalid_compose_yaml_is_reported_as_parse_error(tmp_path: Path):
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services:\n  app: [unterminated\n", encoding="utf-8")
+
+    result = scan_paths([compose])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "parse"
+
+def test_compose_services_must_be_a_mapping(tmp_path: Path):
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services:\n  - app\n", encoding="utf-8")
+
+    result = scan_paths([compose])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "parse"
+    assert "services" in result.errors[0].message
+
+def test_non_utf8_configuration_is_not_counted_as_scanned(tmp_path: Path):
+    terraform = tmp_path / "main.tf"
+    terraform.write_bytes(b"resource \"x\" {\n\xff\n}")
+
+    result = scan_paths([terraform])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "input"
+
+def test_oversized_nested_configuration_marks_scan_partial(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    oversized = tmp_path / "nested.tf"
+    oversized.write_bytes(b"#" * (2 * 1024 * 1024 + 1))
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "partial"
+    assert result.files_scanned == 1
+    assert any(error.kind == "input" and error.file_path == str(oversized) for error in result.errors)
+
+def test_discovery_order_is_stable(tmp_path: Path):
+    from scanner.engine import discover
+
+    for name in ("z.tf", "Dockerfile", "a.tf"):
+        (tmp_path / name).write_text('resource "x" {}\n', encoding="utf-8")
+
+    first = discover([tmp_path])
+    second = discover([tmp_path])
+
+    assert first == second
+    assert first == sorted(first)
+
+def test_cache_directory_exclusion_is_case_insensitive(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    generated = tmp_path / "NODE_MODULES"
+    generated.mkdir()
+    (generated / "Dockerfile").write_text("FROM alpine:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
+
+def test_python_bytecode_named_dockerfile_is_not_detected():
+    from scanner.engine import detect_kind
+
+    assert detect_kind(Path("Dockerfile.cpython-314.pyc")) is None
+    assert detect_kind(Path("Dockerfile.pyo")) is None
+    assert detect_kind(Path("Dockerfile.dev")) == "dockerfile"
+
+def test_empty_scan_input_list_is_an_error():
+    result = scan_paths([])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "discovery"
