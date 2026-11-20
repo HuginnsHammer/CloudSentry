@@ -212,3 +212,13 @@ def test_compose_services_must_be_a_mapping(tmp_path: Path):
     assert result.files_scanned == 0
     assert result.errors[0].kind == "parse"
     assert "services" in result.errors[0].message
+
+def test_non_utf8_configuration_is_not_counted_as_scanned(tmp_path: Path):
+    terraform = tmp_path / "main.tf"
+    terraform.write_bytes(b"resource \"x\" {\n\xff\n}")
+
+    result = scan_paths([terraform])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "input"
