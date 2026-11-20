@@ -245,3 +245,14 @@ def test_discovery_order_is_stable(tmp_path: Path):
 
     assert first == second
     assert first == sorted(first)
+
+def test_cache_directory_exclusion_is_case_insensitive(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    generated = tmp_path / "NODE_MODULES"
+    generated.mkdir()
+    (generated / "Dockerfile").write_text("FROM alpine:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
