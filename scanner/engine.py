@@ -49,7 +49,7 @@ def detect_kind(path: Path) -> str | None:
 def discover(paths: Iterable[Path]) -> list[Path]:
     found: set[Path] = set()
     for item in paths:
-        if item.is_file():
+        if item.is_file() and not item.is_symlink():
             if detect_kind(item):
                 found.add(item)
         elif item.is_dir():
@@ -84,7 +84,15 @@ def scan_paths(paths: Iterable[Path]) -> ScanResult:
             )
         )
     for item in requested:
-        if not item.exists():
+        if item.is_symlink():
+            result.errors.append(
+                ScanError(
+                    file_path=str(item),
+                    kind="input",
+                    message="Symbolic links are not supported as scan targets.",
+                )
+            )
+        elif not item.exists():
             result.errors.append(
                 ScanError(
                     file_path=str(item),
