@@ -17,6 +17,13 @@ from scanner.suppression import apply_suppressions, directive_warnings
 MAX_FILE_BYTES = 2 * 1024 * 1024
 EXCLUDED_DIRECTORY_NAMES = {
     ".git",
+    ".terraform",
+    ".cache",
+    ".next",
+    ".serverless",
+    ".turbo",
+    ".angular",
+    "coverage",
     ".venv",
     ".pytest_cache",
     ".mypy_cache",
