@@ -191,3 +191,13 @@ def test_overlapping_directory_and_file_inputs_are_deduplicated(tmp_path: Path):
 
     assert result.status == "ok"
     assert result.files_scanned == 1
+
+def test_invalid_compose_yaml_is_reported_as_parse_error(tmp_path: Path):
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services:\n  app: [unterminated\n", encoding="utf-8")
+
+    result = scan_paths([compose])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "parse"
