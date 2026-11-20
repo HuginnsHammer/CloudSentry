@@ -159,3 +159,17 @@ def test_explicit_symlink_target_is_rejected(tmp_path: Path):
     assert result.files_scanned == 0
     assert result.errors[0].kind == "input"
     assert "Symbolic links" in result.errors[0].message
+
+def test_common_generated_directories_are_excluded(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    for directory in (".terraform", ".cache", ".next", ".serverless", ".turbo", ".angular", "coverage"):
+        generated = tmp_path / directory
+        generated.mkdir()
+        (generated / "Dockerfile").write_text("FROM alpine:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
+    assert all(directory not in finding.file_path for finding in result.findings for directory in
+               (".terraform", ".cache", ".next", ".serverless", ".turbo", ".angular", "coverage"))
