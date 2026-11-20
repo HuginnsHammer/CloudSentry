@@ -263,3 +263,10 @@ def test_python_bytecode_named_dockerfile_is_not_detected():
     assert detect_kind(Path("Dockerfile.cpython-314.pyc")) is None
     assert detect_kind(Path("Dockerfile.pyo")) is None
     assert detect_kind(Path("Dockerfile.dev")) == "dockerfile"
+
+def test_empty_scan_input_list_is_an_error():
+    result = scan_paths([])
+
+    assert result.status == "error"
+    assert result.files_scanned == 0
+    assert result.errors[0].kind == "discovery"
