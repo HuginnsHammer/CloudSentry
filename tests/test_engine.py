@@ -222,3 +222,14 @@ def test_non_utf8_configuration_is_not_counted_as_scanned(tmp_path: Path):
     assert result.status == "error"
     assert result.files_scanned == 0
     assert result.errors[0].kind == "input"
+
+def test_oversized_nested_configuration_marks_scan_partial(tmp_path: Path):
+    (tmp_path / "Dockerfile").write_text("FROM ubuntu:latest\n", encoding="utf-8")
+    oversized = tmp_path / "nested.tf"
+    oversized.write_bytes(b"#" * (2 * 1024 * 1024 + 1))
+
+    result = scan_paths([tmp_path])
+
+    assert result.status == "partial"
+    assert result.files_scanned == 1
+    assert any(error.kind == "input" and error.file_path == str(oversized) for error in result.errors)
