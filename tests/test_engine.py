@@ -233,3 +233,15 @@ def test_oversized_nested_configuration_marks_scan_partial(tmp_path: Path):
     assert result.status == "partial"
     assert result.files_scanned == 1
     assert any(error.kind == "input" and error.file_path == str(oversized) for error in result.errors)
+
+def test_discovery_order_is_stable(tmp_path: Path):
+    from scanner.engine import discover
+
+    for name in ("z.tf", "Dockerfile", "a.tf"):
+        (tmp_path / name).write_text('resource "x" {}\n', encoding="utf-8")
+
+    first = discover([tmp_path])
+    second = discover([tmp_path])
+
+    assert first == second
+    assert first == sorted(first)
