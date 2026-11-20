@@ -182,3 +182,12 @@ def test_duplicate_scan_inputs_are_processed_once(tmp_path: Path):
 
     assert result.status == "ok"
     assert result.files_scanned == 1
+
+def test_overlapping_directory_and_file_inputs_are_deduplicated(tmp_path: Path):
+    dockerfile = tmp_path / "Dockerfile"
+    dockerfile.write_text("FROM ubuntu:latest\n", encoding="utf-8")
+
+    result = scan_paths([tmp_path, dockerfile])
+
+    assert result.status == "ok"
+    assert result.files_scanned == 1
